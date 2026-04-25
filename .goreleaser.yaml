@@ -44,8 +44,8 @@ archives:
       - DATA_SOURCES.md
       - MCP.md
 
-checksums:
-  - name_template: checksums.txt
+checksum:
+  name_template: checksums.txt
 
 nfpms:
   - id: ohg

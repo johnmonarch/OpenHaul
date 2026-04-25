@@ -1,6 +1,6 @@
 .DS_Store
-ohg
-ohg.exe
+/ohg
+/ohg.exe
 *.test
 *.db
 *.db-shm
