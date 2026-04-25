@@ -4,10 +4,10 @@
 
 ### One-Line Installer
 
-After the first GitHub release is published, install the latest binary with:
+Install the latest binary with:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/johnmonarch/OpenCarrier/main/install.sh | sh
+curl -fsSL https://github.com/johnmonarch/OpenCarrier/releases/latest/download/install.sh | sh
 ```
 
 The installer:
@@ -22,20 +22,18 @@ For a user-local install:
 
 ```bash
 mkdir -p "$HOME/.local/bin"
-curl -fsSL https://raw.githubusercontent.com/johnmonarch/OpenCarrier/main/install.sh \
+curl -fsSL https://github.com/johnmonarch/OpenCarrier/releases/latest/download/install.sh \
   | OHG_INSTALL_DIR="$HOME/.local/bin" sh
 ```
 
 Install a specific release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/johnmonarch/OpenCarrier/main/install.sh \
+curl -fsSL https://github.com/johnmonarch/OpenCarrier/releases/latest/download/install.sh \
   | OHG_VERSION=v0.1.0 sh
 ```
 
 ### Homebrew
-
-After the Homebrew tap is published:
 
 ```bash
 brew tap johnmonarch/openhaulguard
