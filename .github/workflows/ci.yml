@@ -15,8 +15,8 @@ jobs:
     name: gofmt, test, build
     runs-on: ubuntu-latest
     env:
-      GOCACHE: ${{ runner.temp }}/go-build
-      GOMODCACHE: ${{ runner.temp }}/go/pkg/mod
+      GOCACHE: /tmp/go-build
+      GOMODCACHE: /tmp/go/pkg/mod
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
