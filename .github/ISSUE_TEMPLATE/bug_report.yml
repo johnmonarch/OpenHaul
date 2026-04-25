@@ -1,0 +1,75 @@
+name: Bug report
+description: Report reproducible OpenHaul Guard behavior that looks wrong.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Do not include live API keys, private carrier packet contents, customer data, or local database files.
+  - type: input
+    id: version
+    attributes:
+      label: OpenHaul Guard version
+      description: Paste `ohg --version` output, or the commit SHA if built from source.
+      placeholder: "0.1.0 (commit, date)"
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: OS and architecture
+      placeholder: "macOS 15 arm64, Ubuntu 24.04 amd64, Windows 11 amd64"
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command or integration surface
+      description: Include the exact CLI command, HTTP endpoint, or MCP tool call. Sanitize paths and identifiers if needed.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Paste sanitized output. Prefer `--format json` output when possible.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      description: Use fixtures when possible so maintainers can reproduce without live credentials.
+      placeholder: |
+        1. Run `ohg init`
+        2. Run `ohg carrier lookup ...`
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Sanitized doctor output
+      description: If relevant, paste `ohg doctor --format json` after removing local paths or sensitive details.
+      render: json
+    validations:
+      required: false
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety checks
+      options:
+        - label: I removed API keys, tokens, packet contents, private customer data, and local database files.
+          required: true
+        - label: I read the contributing and security guidance.
+          required: true

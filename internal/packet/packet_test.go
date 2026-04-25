@@ -162,6 +162,65 @@ func TestCompareInsuranceFields(t *testing.T) {
 	}
 }
 
+func TestCheckAddsPaymentPartyWarnings(t *testing.T) {
+	path := t.TempDir() + "/packet.txt"
+	body := `Carrier Packet
+
+Legal Name: Example Trucking LLC
+USDOT: 1234567
+MC: 123456
+Address: 100 Main Street, Memphis, TN 38103
+Phone: (555) 555-5555
+Email: dispatch@exampletrucking.test
+Payee: Different Payee LLC
+Remit To:
+Example Trucking LLC
+PO Box 100
+Factoring Company: Apex Factoring Inc.
+`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Check(context.Background(), path, domain.LookupResult{
+		Lookup: domain.LookupInfo{
+			InputType:  "mc",
+			InputValue: "123456",
+			Mode:       "fixture",
+		},
+		Carrier: packetCarrier(),
+	})
+	if err != nil {
+		t.Fatalf("Check failed: %v", err)
+	}
+
+	comparisons := comparisonsByField(result.Comparisons)
+	if comparisons["payment.payee"].Status != "mismatch" {
+		t.Fatalf("payee comparison = %#v", comparisons["payment.payee"])
+	}
+	if comparisons["payment.factoring_company"].Status != "review" {
+		t.Fatalf("factoring comparison = %#v", comparisons["payment.factoring_company"])
+	}
+	if comparisons["payment.remit_to_address"].Status != "match" {
+		t.Fatalf("remit address comparison = %#v", comparisons["payment.remit_to_address"])
+	}
+	if result.Summary.Mismatches == 0 || result.Summary.Review == 0 {
+		t.Fatalf("summary did not include mismatch and review counts: %#v", result.Summary)
+	}
+	if result.Summary.Recommendation != "manual_review_recommended" {
+		t.Fatalf("recommendation = %q", result.Summary.Recommendation)
+	}
+
+	warnings := warningsByCode(result.Warnings)
+	if warnings["OHG_PACKET_PAYMENT_PAYEE_MISMATCH"].Message == "" {
+		t.Fatalf("missing payee mismatch warning: %#v", result.Warnings)
+	}
+	factoringWarning := warnings["OHG_PACKET_PAYMENT_FACTORING_COMPANY_REVIEW"]
+	if !strings.Contains(factoringWarning.Action, "payment instructions") {
+		t.Fatalf("factoring warning action = %#v", factoringWarning)
+	}
+}
+
 func writePacketFixture(t *testing.T) string {
 	t.Helper()
 	path := t.TempDir() + "/packet.txt"
@@ -191,10 +250,48 @@ Factoring Company: Apex Factoring Inc.
 	return path
 }
 
+func packetCarrier() domain.CarrierProfile {
+	return domain.CarrierProfile{
+		USDOTNumber: "1234567",
+		LegalName:   "Example Trucking LLC",
+		DBAName:     "Example Haul",
+		Identifiers: []domain.Identifier{{
+			Type:  "MC",
+			Value: "123456",
+		}},
+		PhysicalAddress: domain.Address{
+			Line1:      "100 Main Street",
+			City:       "Memphis",
+			State:      "TN",
+			PostalCode: "38103",
+			Country:    "US",
+		},
+		MailingAddress: domain.Address{
+			Line1:      "PO Box 100",
+			City:       "Memphis",
+			State:      "TN",
+			PostalCode: "38103",
+			Country:    "US",
+		},
+		Contact: domain.Contact{
+			Phone: "+15555555555",
+			Email: "dispatch@exampletrucking.test",
+		},
+	}
+}
+
 func comparisonsByField(comparisons []FieldComparison) map[string]FieldComparison {
 	out := map[string]FieldComparison{}
 	for _, comparison := range comparisons {
 		out[comparison.Field] = comparison
+	}
+	return out
+}
+
+func warningsByCode(warnings []domain.UserWarning) map[string]domain.UserWarning {
+	out := map[string]domain.UserWarning{}
+	for _, warning := range warnings {
+		out[warning.Code] = warning
 	}
 	return out
 }

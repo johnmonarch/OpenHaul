@@ -1,0 +1,63 @@
+name: Feature request
+description: Suggest a practical OpenHaul Guard improvement.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Feature requests are most useful when they describe the operator workflow, not just a proposed implementation.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - CLI workflow
+        - Install or packaging
+        - Watchlist operations
+        - Reports or JSON schema
+        - Data source or normalization
+        - Packet checks
+        - MCP or HTTP API
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what gets in the way today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the command, output, config, or docs you expect.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Include current workarounds, scripts, or manual steps.
+    validations:
+      required: false
+  - type: textarea
+    id: examples
+    attributes:
+      label: Example commands or JSON
+      render: shell
+    validations:
+      required: false
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety checks
+      options:
+        - label: This request does not require publishing secrets, packet contents, private customer data, or local databases.
+          required: true
+        - label: I checked existing issues and docs for a similar request.
+          required: true

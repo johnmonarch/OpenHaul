@@ -102,9 +102,14 @@ Check a text carrier packet against a lookup result:
 - [Configuration](CONFIGURATION.md)
 - [Data sources](DATA_SOURCES.md)
 - [HTTP API](API.md)
+- [HTTP API service operation](docs/http-api-service.md)
 - [MCP](MCP.md)
+- [Architecture](ARCHITECTURE.md)
+- [Watchlist operations](docs/watchlist-operations.md)
+- [Release checklist](docs/release-v0.1.0.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security](SECURITY.md)
+- [Code of conduct](CODE_OF_CONDUCT.md)
 
 The original planning/spec bundle remains in `openhaul_guard_spec_docs/`.
 

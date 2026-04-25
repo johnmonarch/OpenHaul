@@ -10,12 +10,18 @@ import (
 func TestVeryNewAuthoritySuppressesNewAuthorityByConstruction(t *testing.T) {
 	carrier := baselineCarrier()
 	carrier.Authority = append(carrier.Authority, domain.AuthorityRecord{
+		DocketType:         "MC",
+		DocketNumber:       "123456",
+		AuthorityType:      "COMMON",
 		AuthorityStatus:    "ACTIVE",
 		OriginalActionDate: "2026-02-15",
 		Source:             "fixture",
 		ObservedAt:         "2026-04-25T00:00:00Z",
 	})
 	carrier.Authority[0] = domain.AuthorityRecord{
+		DocketType:         "MC",
+		DocketNumber:       "123456",
+		AuthorityType:      "COMMON",
 		AuthorityStatus:    "ACTIVE",
 		OriginalActionDate: "2026-04-01",
 		Source:             "fixture",
@@ -77,6 +83,29 @@ func TestMissingIdentityAndContactFlagsUseEvidence(t *testing.T) {
 	}
 }
 
+func TestIdentifierMismatchFlagsUseProfileEvidence(t *testing.T) {
+	carrier := baselineCarrier()
+	carrier.Identifiers = []domain.Identifier{
+		{Type: "USDOT", Value: "7654321"},
+		{Type: "MC", Value: "123456"},
+		{Type: "MC", Value: "654321"},
+	}
+
+	assessment := Assess(carrier, testContext())
+	for _, code := range []string{"USDOT_IDENTIFIER_MISMATCH", "IDENTIFIER_VALUE_CONFLICT"} {
+		flag := flagByCode(assessment, code)
+		if flag == nil {
+			t.Fatalf("expected %s flag: %#v", code, assessment.Flags)
+		}
+		if len(flag.Evidence) == 0 {
+			t.Fatalf("expected %s to include evidence", code)
+		}
+	}
+	if assessment.Score != 45 || assessment.Recommendation != "manual_review_recommended" {
+		t.Fatalf("score/recommendation = %d/%q", assessment.Score, assessment.Recommendation)
+	}
+}
+
 func TestMissingActiveAuthorityWhenRecordsExist(t *testing.T) {
 	carrier := baselineCarrier()
 	carrier.Authority = []domain.AuthorityRecord{{
@@ -96,6 +125,47 @@ func TestMissingActiveAuthorityWhenRecordsExist(t *testing.T) {
 	if assessment.Score != 30 || assessment.Recommendation != "manual_review_recommended" {
 		t.Fatalf("score/recommendation = %d/%q", assessment.Score, assessment.Recommendation)
 	}
+}
+
+func TestAuthorityRecordGapsAndDocketMismatches(t *testing.T) {
+	t.Run("missing authority records", func(t *testing.T) {
+		carrier := baselineCarrier()
+		carrier.Authority = nil
+
+		assessment := Assess(carrier, testContext())
+		if !hasFlag(assessment, "AUTHORITY_RECORDS_MISSING") {
+			t.Fatalf("expected AUTHORITY_RECORDS_MISSING flag: %#v", assessment.Flags)
+		}
+		if assessment.Score != 15 || assessment.Recommendation != "monitor" {
+			t.Fatalf("score/recommendation = %d/%q", assessment.Score, assessment.Recommendation)
+		}
+	})
+
+	t.Run("docket mismatch", func(t *testing.T) {
+		carrier := baselineCarrier()
+		carrier.Authority[0].DocketNumber = "999999"
+
+		assessment := Assess(carrier, testContext())
+		if !hasFlag(assessment, "AUTHORITY_DOCKET_MISMATCH") {
+			t.Fatalf("expected AUTHORITY_DOCKET_MISMATCH flag: %#v", assessment.Flags)
+		}
+		if assessment.Score != 30 || assessment.Recommendation != "manual_review_recommended" {
+			t.Fatalf("score/recommendation = %d/%q", assessment.Score, assessment.Recommendation)
+		}
+	})
+
+	t.Run("active authority type missing", func(t *testing.T) {
+		carrier := baselineCarrier()
+		carrier.Authority[0].AuthorityType = ""
+
+		assessment := Assess(carrier, testContext())
+		if !hasFlag(assessment, "ACTIVE_AUTHORITY_TYPE_MISSING") {
+			t.Fatalf("expected ACTIVE_AUTHORITY_TYPE_MISSING flag: %#v", assessment.Flags)
+		}
+		if assessment.Score != 5 || assessment.Recommendation != "no_obvious_issue" {
+			t.Fatalf("score/recommendation = %d/%q", assessment.Score, assessment.Recommendation)
+		}
+	})
 }
 
 func TestOperationsFlagsAffectMonitorRecommendation(t *testing.T) {
@@ -119,6 +189,23 @@ func TestOperationsFlagsAffectMonitorRecommendation(t *testing.T) {
 	}
 }
 
+func TestOperationClassificationAndEmailGapsAffectMonitorRecommendation(t *testing.T) {
+	carrier := baselineCarrier()
+	carrier.Operations.OperationClassification = nil
+	carrier.Contact.Email = ""
+
+	assessment := Assess(carrier, testContext())
+	if !hasFlag(assessment, "OPERATION_CLASSIFICATION_MISSING") {
+		t.Fatalf("expected OPERATION_CLASSIFICATION_MISSING flag: %#v", assessment.Flags)
+	}
+	if !hasFlag(assessment, "MISSING_EMAIL") {
+		t.Fatalf("expected MISSING_EMAIL flag: %#v", assessment.Flags)
+	}
+	if assessment.Score != 10 || assessment.Recommendation != "monitor" {
+		t.Fatalf("score/recommendation = %d/%q", assessment.Score, assessment.Recommendation)
+	}
+}
+
 func TestMCS150BoundaryIsNotStaleAtTwoYears(t *testing.T) {
 	carrier := baselineCarrier()
 	carrier.Operations.MCS150Date = "2024-04-25"
@@ -126,6 +213,19 @@ func TestMCS150BoundaryIsNotStaleAtTwoYears(t *testing.T) {
 	assessment := Assess(carrier, testContext())
 	if hasFlag(assessment, "STALE_MCS150") {
 		t.Fatalf("did not expect STALE_MCS150 at the two-year boundary: %#v", assessment.Flags)
+	}
+}
+
+func TestStaleSMSDataIsInformational(t *testing.T) {
+	carrier := baselineCarrier()
+	carrier.Safety.SMSMonth = "2025-12"
+
+	assessment := Assess(carrier, testContext())
+	if !hasFlag(assessment, "SMS_DATA_STALE") {
+		t.Fatalf("expected SMS_DATA_STALE flag: %#v", assessment.Flags)
+	}
+	if assessment.Score != 0 || assessment.Recommendation != "no_obvious_issue" {
+		t.Fatalf("score/recommendation = %d/%q", assessment.Score, assessment.Recommendation)
 	}
 }
 
@@ -201,13 +301,22 @@ func baselineCarrier() domain.CarrierProfile {
 			PostalCode: "78701",
 			Country:    "US",
 		},
-		Contact: domain.Contact{Phone: "+15555555555"},
 		Operations: domain.Operations{
-			PowerUnits: 1,
-			Drivers:    1,
-			MCS150Date: "2026-01-15",
+			PowerUnits:              1,
+			Drivers:                 1,
+			OperationClassification: []string{"interstate"},
+			MCS150Date:              "2026-01-15",
 		},
+		Contact: domain.Contact{Phone: "+15555555555", Email: "dispatch@example.test"},
+		Identifiers: []domain.Identifier{{
+			Type:   "MC",
+			Value:  "123456",
+			Status: "active",
+		}},
 		Authority: []domain.AuthorityRecord{{
+			DocketType:         "MC",
+			DocketNumber:       "123456",
+			AuthorityType:      "COMMON",
 			AuthorityStatus:    "ACTIVE",
 			OriginalActionDate: "2025-01-01",
 			Source:             "fixture",

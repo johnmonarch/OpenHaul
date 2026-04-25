@@ -1,0 +1,47 @@
+name: Documentation issue
+description: Report missing, unclear, or stale docs.
+title: "[Docs]: "
+labels:
+  - documentation
+body:
+  - type: dropdown
+    id: doc
+    attributes:
+      label: Document
+      options:
+        - README.md
+        - INSTALL.md
+        - CONTRIBUTING.md
+        - SECURITY.md
+        - ARCHITECTURE.md
+        - CLI_REFERENCE.md
+        - API.md
+        - CONFIGURATION.md
+        - DATA_SOURCES.md
+        - MCP.md
+        - docs/release-v0.1.0.md
+        - docs/watchlist-operations.md
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: issue
+    attributes:
+      label: What is wrong or missing?
+      description: Include the section heading or link if possible.
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested wording or example
+      description: Optional, but helpful for command examples and install instructions.
+    validations:
+      required: false
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety checks
+      options:
+        - label: I removed secrets, private packet contents, customer data, and local database details.
+          required: true

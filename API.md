@@ -19,6 +19,12 @@ Authorization: Bearer <token>
 X-OpenHaul-Token: <token>
 ```
 
+The OpenAPI 3 description is available at [`openapi/openapi.yaml`](openapi/openapi.yaml).
+Small server-side examples for curl, Node.js, and Python are in
+[`examples/integrations/`](examples/integrations/).
+Service examples for systemd and launchd are in
+[`docs/http-api-service.md`](docs/http-api-service.md).
+
 ## Endpoints
 
 ```text
@@ -44,11 +50,30 @@ Responses use the same JSON models as the CLI and MCP server. Error responses us
 
 ## Examples
 
+Health check:
+
+```bash
+curl -s http://127.0.0.1:8787/health
+```
+
 Carrier lookup:
 
 ```bash
 curl -s http://127.0.0.1:8787/v1/carrier/lookup \
   -H 'Content-Type: application/json' \
+  -d '{"identifier_type":"mc","identifier_value":"123456","max_age":"24h"}'
+```
+
+Carrier lookup with optional token auth:
+
+```bash
+headers=(-H 'Content-Type: application/json')
+if [ -n "${OHG_API_TOKEN:-}" ]; then
+  headers+=(-H "Authorization: Bearer ${OHG_API_TOKEN}")
+fi
+
+curl -s http://127.0.0.1:8787/v1/carrier/lookup \
+  "${headers[@]}" \
   -d '{"identifier_type":"mc","identifier_value":"123456","max_age":"24h"}'
 ```
 

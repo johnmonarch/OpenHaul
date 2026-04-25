@@ -48,14 +48,17 @@ type FieldComparison struct {
 	Status      string  `json:"status"`
 	Method      string  `json:"method,omitempty"`
 	Score       float64 `json:"score,omitempty"`
+	Message     string  `json:"message,omitempty"`
 }
 
 type Summary struct {
-	Matches        int    `json:"matches"`
-	Mismatches     int    `json:"mismatches"`
-	MissingPacket  int    `json:"missing_packet"`
-	MissingSource  int    `json:"missing_source"`
-	Recommendation string `json:"recommendation"`
+	Matches        int      `json:"matches"`
+	Mismatches     int      `json:"mismatches"`
+	MissingPacket  int      `json:"missing_packet"`
+	MissingSource  int      `json:"missing_source"`
+	Review         int      `json:"review"`
+	Recommendation string   `json:"recommendation"`
+	Details        []string `json:"details,omitempty"`
 }
 
 type CheckResult struct {
@@ -82,14 +85,15 @@ type ExtractResult struct {
 }
 
 var (
-	legalNameRE = regexp.MustCompile(`(?im)^\s*(?:legal\s+name|carrier\s+legal\s+name|legal\s+business\s+name)\s*[:\-]\s*(.+?)\s*$`)
-	dbaRE       = regexp.MustCompile(`(?im)^\s*(?:dba|d/b/a|doing\s+business\s+as)\s*[:\-]\s*(.+?)\s*$`)
-	usdotRE     = regexp.MustCompile(`(?im)\b(?:USDOT|U\.S\.?\s*DOT)\s*(?:number|no\.?|#)?\s*[:#\-]?\s*([0-9]{5,9})\b`)
-	docketRE    = regexp.MustCompile(`(?im)\b(MC|MX|FF)\s*(?:number|no\.?|#)?\s*[:#\-]?\s*([0-9]{3,8})\b`)
-	phoneRE     = regexp.MustCompile(`(?im)\b(?:phone|telephone|tel|dispatch\s+phone|contact\s+phone)\s*[:\-]?\s*(\+?1?[\s.(\-]*[0-9]{3}[\s.)\-]*[0-9]{3}[\s.\-]*[0-9]{4})\b`)
-	emailRE     = regexp.MustCompile(`(?i)\b[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}\b`)
-	addressRE   = regexp.MustCompile(`(?im)^\s*(?:physical\s+address|business\s+address|carrier\s+address|street\s+address|address)\s*[:\-]\s*(.+?)\s*$`)
-	cityStateRE = regexp.MustCompile(`(?i)^\s*(.+?)\s*,\s*([^,]+?)\s*,\s*([A-Z]{2})\s+([0-9]{5}(?:-[0-9]{4})?)(?:\s*,\s*(?:US|USA|United States))?\s*$`)
+	legalNameRE      = regexp.MustCompile(`(?im)^\s*(?:legal\s+name|carrier\s+legal\s+name|legal\s+business\s+name|carrier\s+name|company\s+name|name\s+of\s+carrier)\s*[:\-]\s*(.+?)\s*$`)
+	dbaRE            = regexp.MustCompile(`(?im)^\s*(?:dba|d/b/a|doing\s+business\s+as|trade\s+name)\s*[:\-]\s*(.+?)\s*$`)
+	usdotRE          = regexp.MustCompile(`(?im)\b(?:USDOT|U\.S\.?\s*DOT|DOT)\s*(?:number|no\.?|#)?\s*[:#\-]?\s*([0-9]{5,9})\b`)
+	docketRE         = regexp.MustCompile(`(?im)\b(MC|MX|FF)\s*(?:number|no\.?|#)?\s*[:#\-]?\s*([0-9]{3,8})\b`)
+	phoneRE          = regexp.MustCompile(`(?im)\b(?:phone|telephone|tel|dispatch\s+phone|contact\s+phone|main\s+phone|office\s+phone)\s*[:\-]?\s*(\+?1?[\s.(\-]*[0-9]{3}[\s.)\-]*[0-9]{3}[\s.\-]*[0-9]{4})\b`)
+	emailRE          = regexp.MustCompile(`(?i)\b[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}\b`)
+	addressRE        = regexp.MustCompile(`(?im)^\s*(?:physical\s+address|business\s+address|carrier\s+address|street\s+address|principal\s+address|principal\s+place\s+of\s+business|address)\s*[:\-]\s*(.+?)\s*$`)
+	cityStateRE      = regexp.MustCompile(`(?i)^\s*(.+?)\s*,\s*([^,]+?)\s*,\s*([A-Z]{2})\s+([0-9]{5}(?:-[0-9]{4})?)(?:\s*,\s*(?:US|USA|United States))?\s*$`)
+	cityStateLooseRE = regexp.MustCompile(`(?i)^\s*(.+?)\s*,\s*([^,]+?)\s+([A-Z]{2})\s+([0-9]{5}(?:-[0-9]{4})?)(?:\s*,\s*(?:US|USA|United States))?\s*$`)
 
 	insuranceCarrierRE = regexp.MustCompile(`(?im)^\s*(?:insurance\s+(?:carrier|company|provider)|liability\s+(?:carrier|insurer)|cargo\s+(?:carrier|insurer)|insurer|underwriter)\s*[:\-]\s*(.+?)\s*$`)
 	insurerLetterRE    = regexp.MustCompile(`(?im)^\s*insurer\s+[A-Z]\s*:?\s*(.+?)\s*$`)
@@ -104,6 +108,8 @@ func Check(ctx context.Context, packetPath string, lookup domain.LookupResult) (
 		return CheckResult{}, err
 	}
 	comparisons := Compare(extracted, lookup.Carrier)
+	warnings := append([]domain.UserWarning{}, lookup.Warnings...)
+	warnings = append(warnings, packetWarnings(comparisons)...)
 	return CheckResult{
 		SchemaVersion: domain.SchemaVersion,
 		ReportType:    "packet_check_report",
@@ -114,7 +120,7 @@ func Check(ctx context.Context, packetPath string, lookup domain.LookupResult) (
 		Carrier:       lookup.Carrier,
 		Comparisons:   comparisons,
 		Summary:       summarize(comparisons),
-		Warnings:      lookup.Warnings,
+		Warnings:      warnings,
 		Disclaimer:    domain.Disclaimer,
 	}, nil
 }
@@ -197,9 +203,9 @@ func ExtractFields(text string) ExtractedFields {
 	out.Address = parseAddress(out.RawAddress)
 	out.Insurance = extractInsurance(text)
 	out.CertificateHolder = extractCertificateHolder(text)
-	out.RemitTo = extractBlock(text, []string{"remit to", "remit-to", "remittance address", "payment address"}, nil, 4)
-	out.Payee = extractBlock(text, []string{"payee", "pay to", "checks payable to", "make payable to"}, nil, 2)
-	out.FactoringCompany = extractBlock(text, []string{"factoring company", "factor", "factoring"}, nil, 3)
+	out.RemitTo = extractBlock(text, []string{"remit to", "remit-to", "remit to address", "remittance address", "payment address", "mail payments to", "send payments to"}, paymentStopLabels(), 4)
+	out.Payee = extractBlock(text, []string{"payee", "payee name", "pay to", "pay to the order of", "checks payable to", "make checks payable to", "make payable to", "payable to"}, paymentStopLabels(), 2)
+	out.FactoringCompany = extractBlock(text, []string{"factoring company", "factor", "factoring", "notice of assignment", "payments assigned to", "assigned to"}, paymentStopLabels(), 3)
 	return out
 }
 
@@ -223,7 +229,8 @@ func Compare(packetFields ExtractedFields, carrier domain.CarrierProfile) []Fiel
 		}
 		out = append(out, compareDigits("identifier."+strings.ToLower(typ), packetValue, sourceValue))
 	}
-	return out
+	out = append(out, comparePaymentParties(packetFields, carrier)...)
+	return annotateComparisons(out)
 }
 
 func Write(w io.Writer, result CheckResult, format string) error {
@@ -326,11 +333,27 @@ func Markdown(result CheckResult) string {
 	fmt.Fprintf(&b, "- Matches: %d\n", result.Summary.Matches)
 	fmt.Fprintf(&b, "- Mismatches: %d\n", result.Summary.Mismatches)
 	fmt.Fprintf(&b, "- Missing packet fields: %d\n", result.Summary.MissingPacket)
-	fmt.Fprintf(&b, "- Missing source fields: %d\n\n", result.Summary.MissingSource)
+	fmt.Fprintf(&b, "- Missing source fields: %d\n", result.Summary.MissingSource)
+	fmt.Fprintf(&b, "- Review items: %d\n", result.Summary.Review)
+	for _, detail := range result.Summary.Details {
+		fmt.Fprintf(&b, "- %s\n", detail)
+	}
+	fmt.Fprintf(&b, "\n")
+	if len(result.Warnings) > 0 {
+		fmt.Fprintf(&b, "## Warnings\n\n")
+		for _, warning := range result.Warnings {
+			fmt.Fprintf(&b, "- %s: %s", escape(warning.Code), escape(warning.Message))
+			if warning.Action != "" {
+				fmt.Fprintf(&b, " Action: %s", escape(warning.Action))
+			}
+			fmt.Fprintf(&b, "\n")
+		}
+		fmt.Fprintf(&b, "\n")
+	}
 	fmt.Fprintf(&b, "## Comparisons\n\n")
-	fmt.Fprintf(&b, "| Field | Status | Method | Packet | Source |\n|---|---|---|---|---|\n")
+	fmt.Fprintf(&b, "| Field | Status | Method | Packet | Source | Message |\n|---|---|---|---|---|---|\n")
 	for _, c := range result.Comparisons {
-		fmt.Fprintf(&b, "| %s | %s | %s | %s | %s |\n", escape(c.Field), escape(c.Status), escape(c.Method), escape(c.PacketValue), escape(c.SourceValue))
+		fmt.Fprintf(&b, "| %s | %s | %s | %s | %s | %s |\n", escape(c.Field), escape(c.Status), escape(c.Method), escape(c.PacketValue), escape(c.SourceValue), escape(c.Message))
 	}
 	fmt.Fprintf(&b, "\n## Disclaimer\n\n%s\n", domain.Disclaimer)
 	return b.String()
@@ -343,7 +366,13 @@ func Table(result CheckResult) string {
 	fmt.Fprintf(&b, "Carrier: %s\n", blank(result.Carrier.LegalName))
 	fmt.Fprintf(&b, "USDOT: %s\n", blank(result.Carrier.USDOTNumber))
 	fmt.Fprintf(&b, "Recommendation: %s\n", result.Summary.Recommendation)
-	fmt.Fprintf(&b, "Matches: %d  Mismatches: %d  Missing packet: %d  Missing source: %d\n\n", result.Summary.Matches, result.Summary.Mismatches, result.Summary.MissingPacket, result.Summary.MissingSource)
+	fmt.Fprintf(&b, "Matches: %d  Mismatches: %d  Missing packet: %d  Missing source: %d  Review: %d\n\n", result.Summary.Matches, result.Summary.Mismatches, result.Summary.MissingPacket, result.Summary.MissingSource, result.Summary.Review)
+	for _, detail := range result.Summary.Details {
+		fmt.Fprintf(&b, "- %s\n", detail)
+	}
+	if len(result.Summary.Details) > 0 {
+		fmt.Fprintf(&b, "\n")
+	}
 	for _, c := range result.Comparisons {
 		if c.Status == "match" {
 			continue
@@ -352,9 +381,12 @@ func Table(result CheckResult) string {
 		if c.PacketValue != "" || c.SourceValue != "" {
 			fmt.Fprintf(&b, " (packet=%q source=%q)", c.PacketValue, c.SourceValue)
 		}
+		if c.Message != "" {
+			fmt.Fprintf(&b, " - %s", c.Message)
+		}
 		fmt.Fprintln(&b)
 	}
-	if result.Summary.Mismatches == 0 && result.Summary.MissingPacket == 0 && result.Summary.MissingSource == 0 {
+	if result.Summary.Mismatches == 0 && result.Summary.MissingPacket == 0 && result.Summary.MissingSource == 0 && result.Summary.Review == 0 {
 		fmt.Fprintf(&b, "No packet/source differences found.\n")
 	}
 	return b.String()
@@ -493,6 +525,27 @@ func extractCertificateHolder(text string) string {
 	}, 5)
 }
 
+func paymentStopLabels() []string {
+	return []string{
+		"insurance",
+		"certificate holder",
+		"contact",
+		"phone",
+		"email",
+		"w9",
+		"w-9",
+		"bank",
+		"tax id",
+		"ein",
+		"mc",
+		"usdot",
+		"dot",
+		"carrier",
+		"signature",
+		"authorized representative",
+	}
+}
+
 func extractDateAfterLabel(text string, labels []string) string {
 	for _, line := range strings.Split(text, "\n") {
 		if value, ok := valueAfterLabel(line, labels); ok {
@@ -609,6 +662,9 @@ func parseAddress(raw string) domain.Address {
 	}
 	matches := cityStateRE.FindStringSubmatch(raw)
 	if len(matches) != 5 {
+		matches = cityStateLooseRE.FindStringSubmatch(raw)
+	}
+	if len(matches) != 5 {
 		return domain.Address{Line1: raw}
 	}
 	return domain.Address{
@@ -630,6 +686,169 @@ func appendIdentifier(ids []domain.Identifier, typ, value string) []domain.Ident
 		}
 	}
 	return append(ids, domain.Identifier{Type: typ, Value: value})
+}
+
+func comparePaymentParties(packetFields ExtractedFields, carrier domain.CarrierProfile) []FieldComparison {
+	names := carrierNames(carrier)
+	var out []FieldComparison
+	if strings.TrimSpace(packetFields.Payee) != "" {
+		out = appendRelevant(out, compareTextAny("payment.payee", packetFields.Payee, names, true))
+	}
+
+	if strings.TrimSpace(packetFields.RemitTo) != "" {
+		remitName, remitAddress := splitPartyBlock(packetFields.RemitTo)
+		out = appendRelevant(out, compareTextAny("payment.remit_to_name", remitName, names, true))
+		sourcePaymentAddress := joinAddress(carrier.MailingAddress)
+		if sourcePaymentAddress == "" {
+			sourcePaymentAddress = joinAddress(carrier.PhysicalAddress)
+		}
+		out = appendRelevant(out, compareRemitAddress(remitAddress, sourcePaymentAddress))
+	}
+
+	if strings.TrimSpace(packetFields.FactoringCompany) != "" {
+		comparison := compareTextAny("payment.factoring_company", packetFields.FactoringCompany, names, true)
+		if comparison.Status == "mismatch" {
+			comparison.Status = "review"
+			comparison.Method = "third_party"
+			comparison.Score = 0
+		}
+		out = appendRelevant(out, comparison)
+	}
+	return out
+}
+
+func carrierNames(carrier domain.CarrierProfile) []string {
+	return uniqueNonEmpty(carrier.LegalName, carrier.DBAName)
+}
+
+func compareTextAny(field, packetValue string, sourceValues []string, allowFuzzy bool) FieldComparison {
+	packetValue = cleanValue(packetValue)
+	sourceValues = uniqueNonEmpty(sourceValues...)
+	base := FieldComparison{Field: field, PacketValue: packetValue, SourceValue: strings.Join(sourceValues, " | ")}
+	if missingStatus(&base) {
+		return base
+	}
+	best := FieldComparison{Field: field, PacketValue: packetValue, SourceValue: base.SourceValue, Status: "mismatch", Method: "normalized"}
+	for _, sourceValue := range sourceValues {
+		candidate := compareText(field, packetValue, sourceValue, allowFuzzy)
+		if candidate.Status == "match" {
+			candidate.SourceValue = base.SourceValue
+			return candidate
+		}
+		if candidate.Score > best.Score {
+			best.Score = candidate.Score
+			best.Method = candidate.Method
+		}
+	}
+	return best
+}
+
+func compareRemitAddress(packetValue, sourceValue string) FieldComparison {
+	comparison := compareAddress("payment.remit_to_address", packetValue, sourceValue)
+	if comparison.Status == "mismatch" && addressContained(packetValue, sourceValue) {
+		comparison.Status = "match"
+		comparison.Method = "partial"
+		comparison.Score = 0.9
+	}
+	return comparison
+}
+
+func addressContained(left, right string) bool {
+	leftTokens := tokenSet(comparableAddress(left))
+	rightTokens := tokenSet(comparableAddress(right))
+	if len(leftTokens) == 0 || len(rightTokens) == 0 {
+		return false
+	}
+	shorter, longer := leftTokens, rightTokens
+	if len(rightTokens) < len(leftTokens) {
+		shorter, longer = rightTokens, leftTokens
+	}
+	if len(shorter) < 2 {
+		return false
+	}
+	for token := range shorter {
+		if !longer[token] {
+			return false
+		}
+	}
+	return true
+}
+
+func splitPartyBlock(value string) (string, string) {
+	value = cleanValue(value)
+	if value == "" {
+		return "", ""
+	}
+	parts := splitList(value)
+	if len(parts) == 0 {
+		return "", ""
+	}
+
+	addressStart := -1
+	for i, part := range parts {
+		if looksLikeAddressPart(part) {
+			addressStart = i
+			break
+		}
+	}
+	if addressStart == 0 {
+		return "", strings.Join(parts, ", ")
+	}
+	if addressStart > 0 {
+		return strings.Join(parts[:addressStart], ", "), strings.Join(parts[addressStart:], ", ")
+	}
+	return value, ""
+}
+
+func splitList(value string) []string {
+	rawParts := strings.Split(strings.ReplaceAll(value, "\n", ","), ",")
+	var parts []string
+	for _, part := range rawParts {
+		if cleaned := cleanValue(part); cleaned != "" {
+			parts = append(parts, cleaned)
+		}
+	}
+	return parts
+}
+
+func looksLikeAddressPart(value string) bool {
+	normalized := strings.ToLower(cleanValue(value))
+	if normalized == "" {
+		return false
+	}
+	if strings.Contains(normalized, "p.o. box") || strings.Contains(normalized, "po box") || strings.Contains(normalized, "post office box") {
+		return true
+	}
+	if regexp.MustCompile(`\b[A-Z]{2}\s+[0-9]{5}(?:-[0-9]{4})?\b`).MatchString(strings.ToUpper(value)) {
+		return true
+	}
+	if regexp.MustCompile(`^\s*[0-9]+\s+`).MatchString(value) {
+		return true
+	}
+	for _, token := range []string{"street", "st", "avenue", "ave", "road", "rd", "drive", "dr", "boulevard", "blvd", "lane", "ln", "court", "ct", "suite", "ste"} {
+		if strings.Contains(" "+normalized+" ", " "+token+" ") {
+			return true
+		}
+	}
+	return false
+}
+
+func uniqueNonEmpty(values ...string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, value := range values {
+		cleaned := cleanValue(value)
+		if cleaned == "" {
+			continue
+		}
+		key := comparableText(cleaned)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, cleaned)
+	}
+	return out
 }
 
 func compareInsurance(packetInsurance *ExtractedInsurance, sourceInsurance []domain.InsuranceRecord) []FieldComparison {
@@ -897,6 +1116,110 @@ func missingStatus(c *FieldComparison) bool {
 	}
 }
 
+func annotateComparisons(comparisons []FieldComparison) []FieldComparison {
+	for i := range comparisons {
+		if comparisons[i].Message == "" {
+			comparisons[i].Message = comparisonMessage(comparisons[i])
+		}
+	}
+	return comparisons
+}
+
+func comparisonMessage(comparison FieldComparison) string {
+	label := fieldLabel(comparison.Field)
+	switch comparison.Status {
+	case "mismatch":
+		return fmt.Sprintf("%s differs between the packet and carrier lookup.", label)
+	case "missing_packet":
+		return fmt.Sprintf("%s was available from the carrier lookup but was not found in the packet.", label)
+	case "missing_source":
+		return fmt.Sprintf("%s was found in the packet but was not available from the carrier lookup.", label)
+	case "review":
+		if comparison.Field == "payment.factoring_company" {
+			return "Packet names a factoring company; verify the assignment and remittance instructions before payment."
+		}
+		return fmt.Sprintf("%s needs manual review.", label)
+	default:
+		return ""
+	}
+}
+
+func fieldLabel(field string) string {
+	switch field {
+	case "legal_name":
+		return "Legal name"
+	case "dba_name":
+		return "DBA name"
+	case "usdot_number":
+		return "USDOT number"
+	case "physical_address":
+		return "Physical address"
+	case "phone":
+		return "Phone number"
+	case "email":
+		return "Email address"
+	case "identifier.mc":
+		return "MC number"
+	case "identifier.mx":
+		return "MX number"
+	case "identifier.ff":
+		return "FF number"
+	case "insurance.carrier":
+		return "Insurance carrier"
+	case "insurance.policy_number":
+		return "Insurance policy number"
+	case "insurance.effective_date":
+		return "Insurance effective date"
+	case "insurance.expiration_date":
+		return "Insurance expiration date"
+	case "payment.payee":
+		return "Packet payee"
+	case "payment.remit_to_name":
+		return "Remit-to name"
+	case "payment.remit_to_address":
+		return "Remit-to address"
+	case "payment.factoring_company":
+		return "Factoring company"
+	default:
+		return strings.ReplaceAll(field, "_", " ")
+	}
+}
+
+func packetWarnings(comparisons []FieldComparison) []domain.UserWarning {
+	var out []domain.UserWarning
+	seen := map[string]bool{}
+	for _, comparison := range comparisons {
+		if comparison.Status != "mismatch" && comparison.Status != "review" {
+			continue
+		}
+		code := packetWarningCode(comparison)
+		if seen[code] {
+			continue
+		}
+		seen[code] = true
+		action := "Review the packet against the carrier lookup before onboarding or tendering freight."
+		if comparison.Field == "payment.factoring_company" {
+			action = "Confirm the factoring notice and payment instructions with trusted carrier contacts before remitting funds."
+		}
+		out = append(out, domain.UserWarning{
+			Code:    code,
+			Message: comparison.Message,
+			Action:  action,
+		})
+	}
+	return out
+}
+
+func packetWarningCode(comparison FieldComparison) string {
+	field := strings.ToUpper(comparison.Field)
+	replacer := strings.NewReplacer(".", "_", "-", "_")
+	field = replacer.Replace(field)
+	if comparison.Status == "review" {
+		return "OHG_PACKET_" + field + "_REVIEW"
+	}
+	return "OHG_PACKET_" + field + "_MISMATCH"
+}
+
 func summarize(comparisons []FieldComparison) Summary {
 	var summary Summary
 	for _, comparison := range comparisons {
@@ -905,15 +1228,23 @@ func summarize(comparisons []FieldComparison) Summary {
 			summary.Matches++
 		case "mismatch":
 			summary.Mismatches++
+			summary.Details = append(summary.Details, comparison.Message)
 		case "missing_packet":
 			summary.MissingPacket++
+			summary.Details = append(summary.Details, comparison.Message)
 		case "missing_source":
 			summary.MissingSource++
+			summary.Details = append(summary.Details, comparison.Message)
+		case "review":
+			summary.Review++
+			summary.Details = append(summary.Details, comparison.Message)
 		}
 	}
 	switch {
 	case summary.Mismatches > 0:
 		summary.Recommendation = "manual_review_recommended"
+	case summary.Review > 0:
+		summary.Recommendation = "verify_packet_parties"
 	case summary.MissingPacket > 0 || summary.MissingSource > 0:
 		summary.Recommendation = "review_missing_fields"
 	default:
@@ -953,7 +1284,17 @@ func comparableAddress(s string) string {
 		" tennessee", " tn",
 	)
 	s = replacer.Replace(" " + s)
-	return strings.TrimSpace(s)
+	fields := strings.Fields(s)
+	var kept []string
+	for _, field := range fields {
+		switch field {
+		case "us", "usa", "united", "states":
+			continue
+		default:
+			kept = append(kept, field)
+		}
+	}
+	return strings.Join(kept, " ")
 }
 
 func fuzzyScore(left, right string) float64 {

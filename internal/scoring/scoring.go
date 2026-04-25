@@ -96,6 +96,7 @@ func identityFlags(carrier domain.CarrierProfile, observedAt string) []domain.Ri
 			}},
 		})
 	}
+	flags = append(flags, identifierMismatchFlags(carrier, observedAt)...)
 	return flags
 }
 
@@ -103,8 +104,27 @@ func authorityFlags(carrier domain.CarrierProfile, observedAt time.Time, fallbac
 	var flags []domain.RiskFlag
 	var notActiveEvidence []domain.Evidence
 	var noActiveEvidence []domain.Evidence
+	var missingTypeEvidence []domain.Evidence
+	var docketMismatchEvidence []domain.Evidence
+	identifierValues := identifierValuesByType(carrier.Identifiers)
 	hasStatus := false
 	hasActive := false
+
+	if len(carrier.Authority) == 0 {
+		if evidence := docketIdentifierEvidence(carrier.Identifiers, fallbackObservedAt); len(evidence) > 0 {
+			flags = append(flags, domain.RiskFlag{
+				Code:         "AUTHORITY_RECORDS_MISSING",
+				Severity:     "medium",
+				Category:     "authority",
+				Explanation:  "The carrier profile includes docket identifiers but no authority records.",
+				WhyItMatters: "Authority records are needed to confirm the current operating authority attached to a docket.",
+				NextStep:     "Check the current FMCSA authority record for the listed docket identifier before proceeding.",
+				Confidence:   "high",
+				Evidence:     evidence,
+			})
+		}
+		return flags
+	}
 
 	for _, authority := range carrier.Authority {
 		status := normalizedStatus(authority.AuthorityStatus)
@@ -112,8 +132,19 @@ func authorityFlags(carrier domain.CarrierProfile, observedAt time.Time, fallbac
 			continue
 		}
 		hasStatus = true
+		if evidence, ok := authorityDocketMismatchEvidence(authority, identifierValues, fallbackObservedAt); ok {
+			docketMismatchEvidence = append(docketMismatchEvidence, evidence)
+		}
 		if activeAuthorityStatus(status) {
 			hasActive = true
+			if blank(authority.AuthorityType) {
+				missingTypeEvidence = append(missingTypeEvidence, domain.Evidence{
+					Field:      "authority.authority_type",
+					Value:      authority.AuthorityType,
+					Source:     evidenceSource(authority.Source),
+					ObservedAt: evidenceObservedAt(authority.ObservedAt, fallbackObservedAt),
+				})
+			}
 			continue
 		}
 		evidence := authorityEvidence(authority, fallbackObservedAt)
@@ -144,6 +175,30 @@ func authorityFlags(carrier domain.CarrierProfile, observedAt time.Time, fallbac
 			NextStep:     "Confirm the current authority status directly in FMCSA records and verify the required operation type.",
 			Confidence:   "high",
 			Evidence:     noActiveEvidence,
+		})
+	}
+	if len(docketMismatchEvidence) > 0 {
+		flags = append(flags, domain.RiskFlag{
+			Code:         "AUTHORITY_DOCKET_MISMATCH",
+			Severity:     "high",
+			Category:     "authority",
+			Explanation:  "An authority record docket number differs from the carrier identifier for the same docket type.",
+			WhyItMatters: "Docket mismatches inside the public profile should be reconciled before relying on the authority record.",
+			NextStep:     "Confirm the docket number and authority record directly in FMCSA records.",
+			Confidence:   "high",
+			Evidence:     docketMismatchEvidence,
+		})
+	}
+	if len(missingTypeEvidence) > 0 {
+		flags = append(flags, domain.RiskFlag{
+			Code:         "ACTIVE_AUTHORITY_TYPE_MISSING",
+			Severity:     "low",
+			Category:     "authority",
+			Explanation:  "An active authority record does not include an authority type.",
+			WhyItMatters: "The authority type helps confirm whether the record applies to the requested operation.",
+			NextStep:     "Confirm the active authority type in FMCSA records before relying on this profile.",
+			Confidence:   "high",
+			Evidence:     missingTypeEvidence,
 		})
 	}
 
@@ -212,6 +267,23 @@ func authorityFlags(carrier domain.CarrierProfile, observedAt time.Time, fallbac
 
 func operationsFlags(carrier domain.CarrierProfile, observedAt time.Time, fallbackObservedAt string) []domain.RiskFlag {
 	var flags []domain.RiskFlag
+	if len(carrier.Operations.OperationClassification) == 0 && hasOperationalFootprint(carrier.Operations) {
+		flags = append(flags, domain.RiskFlag{
+			Code:         "OPERATION_CLASSIFICATION_MISSING",
+			Severity:     "low",
+			Category:     "operations",
+			Explanation:  "The carrier profile has operating details but no operation classification.",
+			WhyItMatters: "Operation classification helps confirm how the carrier reports its operating type.",
+			NextStep:     "Review the FMCSA operation classification record with the carrier profile.",
+			Confidence:   "high",
+			Evidence: []domain.Evidence{{
+				Field:      "operations.operation_classification",
+				Value:      carrier.Operations.OperationClassification,
+				Source:     profileSource,
+				ObservedAt: fallbackObservedAt,
+			}},
+		})
+	}
 	if !blank(carrier.Operations.MCS150Date) {
 		mcs150Date, ok := norm.ParseDate(carrier.Operations.MCS150Date)
 		if ok && mcs150Date.Before(observedAt.AddDate(-mcs150StaleYears, 0, 0)) {
@@ -301,28 +373,63 @@ func contactFlags(carrier domain.CarrierProfile, observedAt string) []domain.Ris
 			}},
 		})
 	}
+	if blank(carrier.Contact.Email) {
+		flags = append(flags, domain.RiskFlag{
+			Code:         "MISSING_EMAIL",
+			Severity:     "low",
+			Category:     "contact",
+			Explanation:  "The carrier profile does not include an email address.",
+			WhyItMatters: "Missing email data reduces the contact details available for onboarding verification.",
+			NextStep:     "Confirm the carrier's preferred email contact through an independent source.",
+			Confidence:   "high",
+			Evidence: []domain.Evidence{{
+				Field:      "contact.email",
+				Value:      carrier.Contact.Email,
+				Source:     profileSource,
+				ObservedAt: observedAt,
+			}},
+		})
+	}
 	return flags
 }
 
 func safetyFlags(carrier domain.CarrierProfile, observedAt string) []domain.RiskFlag {
-	if !currentOOSStatus(carrier.Safety.OutOfServiceStatus) {
-		return nil
+	var flags []domain.RiskFlag
+	if staleSMSMonth(carrier.Safety.SMSMonth, observedAt) {
+		flags = append(flags, domain.RiskFlag{
+			Code:         "SMS_DATA_STALE",
+			Severity:     "info",
+			Category:     "safety",
+			Explanation:  "The latest SMS month in the carrier profile is older than the expected monthly cadence plus buffer.",
+			WhyItMatters: "Stale safety snapshot data should be treated as context, not as a complete current safety picture.",
+			NextStep:     "Check the latest FMCSA safety data before relying on this snapshot.",
+			Confidence:   "high",
+			Evidence: []domain.Evidence{{
+				Field:      "safety.sms_month",
+				Value:      carrier.Safety.SMSMonth,
+				Source:     profileSource,
+				ObservedAt: observedAt,
+			}},
+		})
 	}
-	return []domain.RiskFlag{{
-		Code:         "OOS_CURRENT",
-		Severity:     "critical",
-		Category:     "safety",
-		Explanation:  "The source data indicates a current out-of-service status.",
-		WhyItMatters: "An active out-of-service condition is an objective compliance issue that requires review.",
-		NextStep:     "Confirm the out-of-service status in FMCSA records before proceeding.",
-		Confidence:   "high",
-		Evidence: []domain.Evidence{{
-			Field:      "safety.out_of_service_status",
-			Value:      carrier.Safety.OutOfServiceStatus,
-			Source:     "fmcsa_qcmobile_oos",
-			ObservedAt: observedAt,
-		}},
-	}}
+	if currentOOSStatus(carrier.Safety.OutOfServiceStatus) {
+		flags = append(flags, domain.RiskFlag{
+			Code:         "OOS_CURRENT",
+			Severity:     "critical",
+			Category:     "safety",
+			Explanation:  "The source data indicates a current out-of-service status.",
+			WhyItMatters: "An active out-of-service condition is an objective compliance issue that requires review.",
+			NextStep:     "Confirm the out-of-service status in FMCSA records before proceeding.",
+			Confidence:   "high",
+			Evidence: []domain.Evidence{{
+				Field:      "safety.out_of_service_status",
+				Value:      carrier.Safety.OutOfServiceStatus,
+				Source:     "fmcsa_qcmobile_oos",
+				ObservedAt: observedAt,
+			}},
+		})
+	}
+	return flags
 }
 
 func severityScore(severity string) int {
@@ -340,12 +447,145 @@ func severityScore(severity string) int {
 	}
 }
 
+func identifierMismatchFlags(carrier domain.CarrierProfile, observedAt string) []domain.RiskFlag {
+	var flags []domain.RiskFlag
+	var usdotMismatchEvidence []domain.Evidence
+	seenByType := map[string]string{}
+	var conflictEvidence []domain.Evidence
+	for _, id := range carrier.Identifiers {
+		typ := identifierType(id.Type)
+		value := digitsOnly(id.Value)
+		if typ == "" || value == "" {
+			continue
+		}
+		if typ == "USDOT" && !blank(carrier.USDOTNumber) && value != digitsOnly(carrier.USDOTNumber) {
+			usdotMismatchEvidence = append(usdotMismatchEvidence, domain.Evidence{
+				Field:           "identifiers.usdot.value",
+				SourceValue:     value,
+				ComparisonValue: carrier.USDOTNumber,
+				Source:          profileSource,
+				ObservedAt:      observedAt,
+			})
+			continue
+		}
+		if typ == "USDOT" {
+			continue
+		}
+		if previous, ok := seenByType[typ]; ok && previous != value {
+			conflictEvidence = append(conflictEvidence, domain.Evidence{
+				Field:           "identifiers." + strings.ToLower(typ) + ".value",
+				SourceValue:     previous,
+				ComparisonValue: value,
+				Source:          profileSource,
+				ObservedAt:      observedAt,
+			})
+			continue
+		}
+		seenByType[typ] = value
+	}
+	if len(usdotMismatchEvidence) > 0 {
+		flags = append(flags, domain.RiskFlag{
+			Code:         "USDOT_IDENTIFIER_MISMATCH",
+			Severity:     "high",
+			Category:     "identity",
+			Explanation:  "A USDOT identifier in the carrier profile differs from the profile USDOT number.",
+			WhyItMatters: "Conflicting USDOT identifiers should be reconciled before relying on the profile.",
+			NextStep:     "Confirm the USDOT number directly in FMCSA records.",
+			Confidence:   "high",
+			Evidence:     usdotMismatchEvidence,
+		})
+	}
+	if len(conflictEvidence) > 0 {
+		flags = append(flags, domain.RiskFlag{
+			Code:         "IDENTIFIER_VALUE_CONFLICT",
+			Severity:     "medium",
+			Category:     "identity",
+			Explanation:  "The carrier profile includes multiple values for the same docket identifier type.",
+			WhyItMatters: "Conflicting docket identifiers can cause authority and onboarding records to be matched to the wrong profile.",
+			NextStep:     "Confirm the current docket identifier directly in FMCSA records.",
+			Confidence:   "high",
+			Evidence:     conflictEvidence,
+		})
+	}
+	return flags
+}
+
 func authorityEvidence(authority domain.AuthorityRecord, fallbackObservedAt string) domain.Evidence {
 	return domain.Evidence{
 		Field:      "authority.authority_status",
 		Value:      authority.AuthorityStatus,
 		Source:     evidenceSource(authority.Source),
 		ObservedAt: evidenceObservedAt(authority.ObservedAt, fallbackObservedAt),
+	}
+}
+
+func authorityDocketMismatchEvidence(authority domain.AuthorityRecord, identifiers map[string][]string, fallbackObservedAt string) (domain.Evidence, bool) {
+	typ := identifierType(authority.DocketType)
+	if typ == "" || typ == "USDOT" || blank(authority.DocketNumber) {
+		return domain.Evidence{}, false
+	}
+	values := identifiers[typ]
+	if len(values) != 1 {
+		return domain.Evidence{}, false
+	}
+	docketNumber := digitsOnly(authority.DocketNumber)
+	if docketNumber == "" || values[0] == docketNumber {
+		return domain.Evidence{}, false
+	}
+	return domain.Evidence{
+		Field:           "authority.docket_number",
+		SourceValue:     docketNumber,
+		ComparisonValue: values[0],
+		Source:          evidenceSource(authority.Source),
+		ObservedAt:      evidenceObservedAt(authority.ObservedAt, fallbackObservedAt),
+	}, true
+}
+
+func docketIdentifierEvidence(identifiers []domain.Identifier, observedAt string) []domain.Evidence {
+	var evidence []domain.Evidence
+	for _, id := range identifiers {
+		typ := identifierType(id.Type)
+		if typ == "" || typ == "USDOT" || blank(id.Value) {
+			continue
+		}
+		evidence = append(evidence, domain.Evidence{
+			Field:      "identifiers." + strings.ToLower(typ) + ".value",
+			Value:      digitsOnly(id.Value),
+			Source:     profileSource,
+			ObservedAt: observedAt,
+		})
+	}
+	return evidence
+}
+
+func identifierValuesByType(identifiers []domain.Identifier) map[string][]string {
+	out := map[string][]string{}
+	seen := map[string]bool{}
+	for _, id := range identifiers {
+		typ := identifierType(id.Type)
+		value := digitsOnly(id.Value)
+		if typ == "" || value == "" {
+			continue
+		}
+		key := typ + ":" + value
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out[typ] = append(out[typ], value)
+	}
+	return out
+}
+
+func identifierType(raw string) string {
+	typ := strings.ToUpper(strings.TrimSpace(raw))
+	switch typ {
+	case "DOT", "USDOT":
+		return "USDOT"
+	case "MC", "MX", "FF":
+		return typ
+	default:
+		return ""
 	}
 }
 
@@ -382,6 +622,35 @@ func currentOOSStatus(status string) bool {
 		strings.Contains(status, "oos order")
 }
 
+func staleSMSMonth(raw, observedAt string) bool {
+	if blank(raw) {
+		return false
+	}
+	smsMonth, ok := parseSMSMonth(raw)
+	if !ok {
+		return false
+	}
+	observed, ok := norm.ParseDate(observedAt)
+	if !ok {
+		return false
+	}
+	return smsMonth.Before(observed.AddDate(0, -3, 0))
+}
+
+func parseSMSMonth(raw string) (time.Time, bool) {
+	value := strings.TrimSpace(raw)
+	for _, layout := range []string{"2006-01", "200601", "01/2006", "2006-01-02", time.RFC3339} {
+		if t, err := time.Parse(layout, value); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
+}
+
+func hasOperationalFootprint(operations domain.Operations) bool {
+	return operations.PowerUnits > 0 || operations.Drivers > 0 || len(operations.CargoCarried) > 0 || !blank(operations.MCS150Date)
+}
+
 func emptyAddress(address domain.Address) bool {
 	return blank(address.Line1) &&
 		blank(address.Line2) &&
@@ -407,6 +676,16 @@ func hasStatusWord(status, word string) bool {
 
 func blank(s string) bool {
 	return strings.TrimSpace(s) == ""
+}
+
+func digitsOnly(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if r >= '0' && r <= '9' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 func profileObservedAt(carrier domain.CarrierProfile, observedAt time.Time) string {

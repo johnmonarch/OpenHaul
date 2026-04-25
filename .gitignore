@@ -9,6 +9,7 @@ dist/
 coverage.out
 coverage/
 *.prof
+__pycache__/
 .openhaulguard/
 *.deb
 *.rpm

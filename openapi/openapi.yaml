@@ -1,0 +1,945 @@
+openapi: 3.0.3
+info:
+  title: OpenHaul Guard Local HTTP API
+  version: "1.0.0"
+  description: |
+    OpenAPI description for the local `ohg serve` REST API. The service is
+    intended for same-host server-side integrations and does not enable browser
+    CORS. Webhooks are not part of the OSS HTTP API.
+  license:
+    name: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+servers:
+  - url: http://127.0.0.1:8787
+    description: Default local ohg serve listener
+tags:
+  - name: Health
+    description: Local process health and API metadata.
+  - name: Carrier
+    description: Carrier lookup and local observation diff reports.
+  - name: Packet
+    description: Local carrier packet extraction and comparison reports.
+  - name: Watch
+    description: Local carrier watchlist export data.
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Check local API health
+      operationId: getHealth
+      description: Returns process health, version metadata, and whether token auth is configured for `/v1` endpoints.
+      security: []
+      responses:
+        "200":
+          description: API health response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+              examples:
+                healthy:
+                  value:
+                    status: ok
+                    service: openhaulguard_http
+                    version: dev
+                    generated_at: "2026-04-25T14:30:00Z"
+                    auth_required: false
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+  /v1/carrier/lookup:
+    post:
+      tags: [Carrier]
+      summary: Look up a carrier
+      operationId: lookupCarrier
+      description: |
+        Looks up a carrier by MC, MX, FF, USDOT, or name and returns the same JSON-compatible lookup report as `ohg carrier lookup --format json`.
+
+        If `OHG_API_TOKEN` or `--api-token` is configured on the server, send either `Authorization: Bearer <token>` or `X-OpenHaul-Token: <token>`.
+      security:
+        - bearerAuth: []
+        - openHaulToken: []
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CarrierLookupRequest"
+            examples:
+              mcLookup:
+                value:
+                  identifier_type: mc
+                  identifier_value: "123456"
+                  max_age: 24h
+      responses:
+        "200":
+          description: Carrier lookup report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LookupResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+  /v1/carrier/diff:
+    post:
+      tags: [Carrier]
+      summary: Compare stored carrier observations
+      operationId: diffCarrier
+      description: Returns local field-level changes across stored observations for a carrier.
+      security:
+        - bearerAuth: []
+        - openHaulToken: []
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CarrierDiffRequest"
+            examples:
+              mcDiff:
+                value:
+                  identifier_type: mc
+                  identifier_value: "123456"
+                  since: 90d
+      responses:
+        "200":
+          description: Carrier diff report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiffResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/packet/extract:
+    post:
+      tags: [Packet]
+      summary: Extract fields from a local carrier packet
+      operationId: extractPacket
+      description: Reads a local text or PDF carrier packet path available to the `ohg serve` process and extracts structured fields.
+      security:
+        - bearerAuth: []
+        - openHaulToken: []
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PacketPathRequest"
+            examples:
+              packetPath:
+                value:
+                  path: examples/fixtures/packets/basic_carrier_packet.txt
+      responses:
+        "200":
+          description: Packet extraction report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PacketExtractResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/PacketParseFailed"
+  /v1/packet/check:
+    post:
+      tags: [Packet]
+      summary: Check a local carrier packet against lookup data
+      operationId: checkPacket
+      description: Extracts a local packet and compares it with a carrier lookup result.
+      security:
+        - bearerAuth: []
+        - openHaulToken: []
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PacketCheckRequest"
+            examples:
+              packetCheck:
+                value:
+                  path: examples/fixtures/packets/basic_carrier_packet.txt
+                  identifier_type: mc
+                  identifier_value: "123456"
+      responses:
+        "200":
+          description: Packet check report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PacketCheckResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/PacketParseFailed"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+  /v1/watch/export:
+    get:
+      tags: [Watch]
+      summary: Export the local watchlist
+      operationId: exportWatchlist
+      description: Returns the locally stored carrier watchlist as JSON.
+      security:
+        - bearerAuth: []
+        - openHaulToken: []
+        - {}
+      responses:
+        "200":
+          description: Watchlist export report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WatchExportResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Token configured with `OHG_API_TOKEN` or `ohg serve --api-token`.
+    openHaulToken:
+      type: apiKey
+      in: header
+      name: X-OpenHaul-Token
+      description: Alternate token header for server-side clients.
+  responses:
+    BadRequest:
+      description: Invalid request body or arguments
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Unauthorized:
+      description: Missing or invalid API token
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            missingToken:
+              value:
+                error:
+                  code: OHG_AUTH_API_INVALID
+                  message: invalid or missing API token
+                  user_action: "Send Authorization: Bearer <token> or X-OpenHaul-Token"
+                  retryable: false
+    NotFound:
+      description: Carrier, source record, or local cache entry was not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    RateLimited:
+      description: Upstream source rate limit
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    SourceUnavailable:
+      description: Upstream source unavailable
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    PacketParseFailed:
+      description: Packet could not be parsed
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    MethodNotAllowed:
+      description: HTTP method is not allowed for this endpoint
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status, service, version, generated_at, auth_required]
+      properties:
+        status:
+          type: string
+          example: ok
+        service:
+          type: string
+          example: openhaulguard_http
+        version:
+          type: string
+          example: "1.0.0"
+        generated_at:
+          type: string
+          format: date-time
+        auth_required:
+          type: boolean
+    CarrierLookupRequest:
+      type: object
+      additionalProperties: false
+      required: [identifier_type, identifier_value]
+      properties:
+        identifier_type:
+          $ref: "#/components/schemas/LookupIdentifierType"
+        identifier_value:
+          type: string
+          minLength: 1
+          example: "123456"
+        force_refresh:
+          type: boolean
+          default: false
+          description: Ignore fresh local cache and request current source data when possible.
+        offline:
+          type: boolean
+          description: Restrict lookup to local cache or imported mirror data.
+        max_age:
+          type: string
+          example: 24h
+          description: Optional Go duration such as `24h`, `30m`, or `1h30m` for cache freshness.
+    CarrierDiffRequest:
+      type: object
+      additionalProperties: false
+      required: [identifier_type, identifier_value]
+      properties:
+        identifier_type:
+          $ref: "#/components/schemas/DiffIdentifierType"
+        identifier_value:
+          type: string
+          minLength: 1
+          example: "123456"
+        since:
+          type: string
+          default: 90d
+          example: 90d
+          description: Local observation lookback window accepted by the CLI parser.
+        strict:
+          type: boolean
+          default: false
+    PacketPathRequest:
+      type: object
+      additionalProperties: false
+      required: [path]
+      properties:
+        path:
+          type: string
+          minLength: 1
+          description: Local filesystem path readable by the `ohg serve` process.
+          example: examples/fixtures/packets/basic_carrier_packet.txt
+    PacketCheckRequest:
+      type: object
+      additionalProperties: false
+      required: [path, identifier_type, identifier_value]
+      properties:
+        path:
+          type: string
+          minLength: 1
+          example: examples/fixtures/packets/basic_carrier_packet.txt
+        identifier_type:
+          $ref: "#/components/schemas/DiffIdentifierType"
+        identifier_value:
+          type: string
+          minLength: 1
+          example: "123456"
+        force_refresh:
+          type: boolean
+          default: false
+        offline:
+          type: boolean
+        max_age:
+          type: string
+          example: 24h
+          description: Optional Go duration such as `24h`, `30m`, or `1h30m` for cache freshness.
+    LookupIdentifierType:
+      type: string
+      enum: [mc, mx, ff, dot, name]
+    DiffIdentifierType:
+      type: string
+      enum: [mc, dot]
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          $ref: "#/components/schemas/Error"
+    Error:
+      type: object
+      required: [code, message, retryable]
+      properties:
+        code:
+          type: string
+          example: OHG_INVALID_ARGS
+        message:
+          type: string
+          example: identifier_type and identifier_value are required
+        user_action:
+          type: string
+          example: Run without --offline after completing setup
+        retryable:
+          type: boolean
+          example: false
+    LookupResult:
+      type: object
+      required: [schema_version, report_type, generated_at, lookup, carrier, freshness, risk_assessment, sources, disclaimer]
+      properties:
+        schema_version:
+          type: string
+          example: "1.0"
+        report_type:
+          type: string
+          enum: [carrier_lookup_report]
+        generated_at:
+          type: string
+          format: date-time
+        lookup:
+          $ref: "#/components/schemas/LookupInfo"
+        carrier:
+          $ref: "#/components/schemas/CarrierProfile"
+        freshness:
+          $ref: "#/components/schemas/FreshnessSummary"
+        risk_assessment:
+          $ref: "#/components/schemas/RiskAssessment"
+        sources:
+          type: array
+          items:
+            $ref: "#/components/schemas/SourceFetchResult"
+        warnings:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserWarning"
+        disclaimer:
+          type: string
+    LookupInfo:
+      type: object
+      required: [input_type, input_value, looked_up_at, mode]
+      properties:
+        input_type:
+          type: string
+        input_value:
+          type: string
+        resolved_usdot:
+          type: string
+        looked_up_at:
+          type: string
+          format: date-time
+        mode:
+          type: string
+          example: live
+        local_first_seen_at:
+          type: string
+          format: date-time
+    CarrierProfile:
+      type: object
+      required: [usdot_number]
+      properties:
+        usdot_number:
+          type: string
+          example: "1234567"
+        legal_name:
+          type: string
+          example: Example Trucking LLC
+        dba_name:
+          type: string
+        identifiers:
+          type: array
+          items:
+            $ref: "#/components/schemas/Identifier"
+        entity_type:
+          type: string
+        physical_address:
+          $ref: "#/components/schemas/Address"
+        mailing_address:
+          $ref: "#/components/schemas/Address"
+        contact:
+          $ref: "#/components/schemas/Contact"
+        operations:
+          $ref: "#/components/schemas/Operations"
+        authority:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuthorityRecord"
+        insurance:
+          type: array
+          items:
+            $ref: "#/components/schemas/InsuranceRecord"
+        safety:
+          $ref: "#/components/schemas/Safety"
+        source_first_seen_at:
+          type: string
+          format: date-time
+        local_first_seen_at:
+          type: string
+          format: date-time
+        local_last_seen_at:
+          type: string
+          format: date-time
+    Identifier:
+      type: object
+      required: [type, value]
+      properties:
+        type:
+          type: string
+          example: MC
+        value:
+          type: string
+          example: "123456"
+        status:
+          type: string
+    Address:
+      type: object
+      properties:
+        line1:
+          type: string
+        line2:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        postal_code:
+          type: string
+        country:
+          type: string
+    Contact:
+      type: object
+      properties:
+        phone:
+          type: string
+        fax:
+          type: string
+        email:
+          type: string
+          format: email
+    Operations:
+      type: object
+      properties:
+        power_units:
+          type: integer
+          format: int32
+        drivers:
+          type: integer
+          format: int32
+        operation_classification:
+          type: array
+          items:
+            type: string
+        cargo_carried:
+          type: array
+          items:
+            type: string
+        mcs150_date:
+          type: string
+          example: "2026-04-25"
+    AuthorityRecord:
+      type: object
+      properties:
+        docket_type:
+          type: string
+        docket_number:
+          type: string
+        authority_type:
+          type: string
+        authority_status:
+          type: string
+        original_action:
+          type: string
+        original_action_date:
+          type: string
+        final_action:
+          type: string
+        final_action_date:
+          type: string
+        source:
+          type: string
+        observed_at:
+          type: string
+          format: date-time
+    InsuranceRecord:
+      type: object
+      properties:
+        insurance_type:
+          type: string
+        insurer_name:
+          type: string
+        policy_number:
+          type: string
+        effective_date:
+          type: string
+        cancellation_date:
+          type: string
+        cancel_effective_date:
+          type: string
+        source:
+          type: string
+        observed_at:
+          type: string
+          format: date-time
+    Safety:
+      type: object
+      properties:
+        out_of_service_status:
+          type: string
+        sms_month:
+          type: string
+    FreshnessSummary:
+      type: object
+      required: [mode, sources]
+      properties:
+        mode:
+          type: string
+          example: live
+        sources:
+          type: array
+          items:
+            $ref: "#/components/schemas/FreshnessItem"
+    FreshnessItem:
+      type: object
+      required: [source]
+      properties:
+        source:
+          type: string
+        fetched_at:
+          type: string
+          format: date-time
+        notes:
+          type: string
+    RiskAssessment:
+      type: object
+      required: [score, recommendation, flags]
+      properties:
+        id:
+          type: integer
+          format: int64
+        score:
+          type: integer
+          format: int32
+        recommendation:
+          type: string
+        flags:
+          type: array
+          items:
+            $ref: "#/components/schemas/RiskFlag"
+    RiskFlag:
+      type: object
+      required: [code, severity, category, explanation, why_it_matters, next_step, evidence, confidence]
+      properties:
+        code:
+          type: string
+        severity:
+          type: string
+        category:
+          type: string
+        explanation:
+          type: string
+        why_it_matters:
+          type: string
+        next_step:
+          type: string
+        evidence:
+          type: array
+          items:
+            $ref: "#/components/schemas/Evidence"
+        confidence:
+          type: string
+    Evidence:
+      type: object
+      required: [field, source]
+      properties:
+        field:
+          type: string
+        value:
+          description: JSON value observed by OpenHaul Guard.
+        source_value:
+          description: JSON value from the source record.
+        comparison_value:
+          description: JSON value used for comparison.
+        source:
+          type: string
+        observed_at:
+          type: string
+          format: date-time
+    SourceFetchResult:
+      type: object
+      required: [source_name, endpoint, request_method, request_url_redacted, fetched_at]
+      properties:
+        source_name:
+          type: string
+        endpoint:
+          type: string
+        request_method:
+          type: string
+        request_url_redacted:
+          type: string
+        status_code:
+          type: integer
+          format: int32
+        fetched_at:
+          type: string
+          format: date-time
+        duration_ms:
+          type: integer
+          format: int64
+        response_hash:
+          type: string
+        raw_path:
+          type: string
+        error_code:
+          type: string
+        error_message:
+          type: string
+    UserWarning:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        action:
+          type: string
+    DiffResult:
+      type: object
+      required: [schema_version, report_type, generated_at, identifier_type, identifier_value, observation_count, changes]
+      properties:
+        schema_version:
+          type: string
+          example: "1.0"
+        report_type:
+          type: string
+          enum: [carrier_diff_report]
+        generated_at:
+          type: string
+          format: date-time
+        identifier_type:
+          type: string
+        identifier_value:
+          type: string
+        resolved_usdot:
+          type: string
+        observation_count:
+          type: integer
+          format: int32
+        changes:
+          type: array
+          items:
+            $ref: "#/components/schemas/FieldDiff"
+    FieldDiff:
+      type: object
+      required: [field_path, previous_value, current_value, previous_observed_at, current_observed_at, material]
+      properties:
+        field_path:
+          type: string
+        previous_value:
+          type: string
+        current_value:
+          type: string
+        previous_observed_at:
+          type: string
+          format: date-time
+        current_observed_at:
+          type: string
+          format: date-time
+        material:
+          type: boolean
+    PacketExtractResult:
+      type: object
+      required: [schema_version, report_type, generated_at, packet_path, extracted, disclaimer]
+      properties:
+        schema_version:
+          type: string
+          example: "1.0"
+        report_type:
+          type: string
+          enum: [packet_extract_report]
+        generated_at:
+          type: string
+          format: date-time
+        packet_path:
+          type: string
+        extracted:
+          $ref: "#/components/schemas/ExtractedFields"
+        disclaimer:
+          type: string
+    PacketCheckResult:
+      type: object
+      required: [schema_version, report_type, generated_at, packet_path, lookup, extracted, carrier, comparisons, summary, disclaimer]
+      properties:
+        schema_version:
+          type: string
+          example: "1.0"
+        report_type:
+          type: string
+          enum: [packet_check_report]
+        generated_at:
+          type: string
+          format: date-time
+        packet_path:
+          type: string
+        lookup:
+          $ref: "#/components/schemas/LookupInfo"
+        extracted:
+          $ref: "#/components/schemas/ExtractedFields"
+        carrier:
+          $ref: "#/components/schemas/CarrierProfile"
+        comparisons:
+          type: array
+          items:
+            $ref: "#/components/schemas/FieldComparison"
+        summary:
+          $ref: "#/components/schemas/PacketSummary"
+        warnings:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserWarning"
+        disclaimer:
+          type: string
+    ExtractedFields:
+      type: object
+      properties:
+        legal_name:
+          type: string
+        dba_name:
+          type: string
+        usdot_number:
+          type: string
+        identifiers:
+          type: array
+          items:
+            $ref: "#/components/schemas/Identifier"
+        address:
+          $ref: "#/components/schemas/Address"
+        raw_address:
+          type: string
+        contact:
+          $ref: "#/components/schemas/Contact"
+        insurance:
+          $ref: "#/components/schemas/ExtractedInsurance"
+        certificate_holder:
+          type: string
+        remit_to:
+          type: string
+        payee:
+          type: string
+        factoring_company:
+          type: string
+    ExtractedInsurance:
+      type: object
+      properties:
+        carrier:
+          type: string
+        policy_number:
+          type: string
+        effective_date:
+          type: string
+        expiration_date:
+          type: string
+    FieldComparison:
+      type: object
+      required: [field, status]
+      properties:
+        field:
+          type: string
+        packet_value:
+          type: string
+        source_value:
+          type: string
+        status:
+          type: string
+          enum: [match, mismatch, missing_packet, missing_source, review, missing_both]
+        method:
+          type: string
+        score:
+          type: number
+          format: double
+        message:
+          type: string
+    PacketSummary:
+      type: object
+      required: [matches, mismatches, missing_packet, missing_source, review, recommendation]
+      properties:
+        matches:
+          type: integer
+          format: int32
+        mismatches:
+          type: integer
+          format: int32
+        missing_packet:
+          type: integer
+          format: int32
+        missing_source:
+          type: integer
+          format: int32
+        review:
+          type: integer
+          format: int32
+        recommendation:
+          type: string
+        details:
+          type: array
+          items:
+            type: string
+    WatchExportResult:
+      type: object
+      required: [schema_version, report_type, generated_at, total, items]
+      properties:
+        schema_version:
+          type: string
+          example: "1.0"
+        report_type:
+          type: string
+          enum: [watchlist_export_report]
+        generated_at:
+          type: string
+          format: date-time
+        total:
+          type: integer
+          format: int32
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/WatchExportItem"
+    WatchExportItem:
+      type: object
+      required: [identifier_type, identifier_value, normalized_value, active, created_at, updated_at]
+      properties:
+        identifier_type:
+          type: string
+        identifier_value:
+          type: string
+        normalized_value:
+          type: string
+        usdot_number:
+          type: string
+        label:
+          type: string
+        active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        last_synced_at:
+          type: string
+          format: date-time
