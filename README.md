@@ -16,6 +16,7 @@ This repository contains the first Go CLI implementation:
 - Local carrier diffs across stored observations
 - Watchlist add, remove, list, sync, reports, and export
 - Text/PDF carrier packet extraction and checks against lookup results
+- Local HTTP API for server-side integrations
 - Developer-preview MCP JSON-RPC server over stdio
 
 ## Quick Start
@@ -100,6 +101,7 @@ Check a text carrier packet against a lookup result:
 - [CLI reference](CLI_REFERENCE.md)
 - [Configuration](CONFIGURATION.md)
 - [Data sources](DATA_SOURCES.md)
+- [HTTP API](API.md)
 - [MCP](MCP.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security](SECURITY.md)

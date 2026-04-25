@@ -254,6 +254,16 @@ func TestMirrorImportAndLookup(t *testing.T) {
 	}
 }
 
+func TestServeRefusesNonLoopbackWithoutToken(t *testing.T) {
+	_, _, err := runCLI(t, "--home", t.TempDir(), "serve", "--listen", "0.0.0.0:8787")
+	if err == nil {
+		t.Fatal("serve without token on non-loopback address succeeded, want error")
+	}
+	if !strings.Contains(err.Error(), "refusing to serve without an API token") {
+		t.Fatalf("serve error = %v", err)
+	}
+}
+
 func runCLI(t *testing.T, args ...string) (string, string, error) {
 	t.Helper()
 	g := &globals{}

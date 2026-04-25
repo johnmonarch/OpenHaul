@@ -11,6 +11,7 @@ const (
 	CodeSetupIncomplete   = "OHG_SETUP_INCOMPLETE"
 	CodeAuthFMCSAMissing  = "OHG_AUTH_FMCSA_MISSING"
 	CodeAuthFMCSAInvalid  = "OHG_AUTH_FMCSA_INVALID"
+	CodeAuthAPIInvalid    = "OHG_AUTH_API_INVALID"
 	CodeSourceUnavailable = "OHG_SOURCE_UNAVAILABLE"
 	CodeSourceNotFound    = "OHG_SOURCE_NOT_FOUND"
 	CodeDatabase          = "OHG_DB_ERROR"
@@ -65,7 +66,7 @@ func ExitCode(err error) int {
 		return 2
 	case CodeSetupIncomplete:
 		return 3
-	case CodeAuthFMCSAMissing, CodeAuthFMCSAInvalid:
+	case CodeAuthFMCSAMissing, CodeAuthFMCSAInvalid, CodeAuthAPIInvalid:
 		return 4
 	case CodeSourceUnavailable, CodeSourceRateLimited:
 		return 5

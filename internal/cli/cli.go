@@ -15,6 +15,7 @@ import (
 	"github.com/openhaulguard/openhaulguard/internal/config"
 	"github.com/openhaulguard/openhaulguard/internal/credentials"
 	"github.com/openhaulguard/openhaulguard/internal/domain"
+	"github.com/openhaulguard/openhaulguard/internal/httpapi"
 	mcpserver "github.com/openhaulguard/openhaulguard/internal/mcp"
 	"github.com/openhaulguard/openhaulguard/internal/packet"
 	"github.com/openhaulguard/openhaulguard/internal/report"
@@ -72,6 +73,7 @@ func rootCommand(g *globals) *cobra.Command {
 	root.AddCommand(configCommand(g))
 	root.AddCommand(mcpCommand(g))
 	root.AddCommand(packetCommand(g))
+	root.AddCommand(serveCommand(g))
 	return root
 }
 
@@ -766,6 +768,43 @@ func mcpCommand(g *globals) *cobra.Command {
 			).Run(ctx)
 		},
 	})
+	return cmd
+}
+
+func serveCommand(g *globals) *cobra.Command {
+	var listen string
+	var apiToken string
+	cmd := &cobra.Command{
+		Use:   "serve",
+		Short: "Serve the local HTTP API",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			token := strings.TrimSpace(apiToken)
+			if token == "" {
+				token = strings.TrimSpace(os.Getenv("OHG_API_TOKEN"))
+			}
+			if err := httpapi.ValidateListen(listen, token != ""); err != nil {
+				return err
+			}
+			ctx := cmd.Context()
+			a, err := newApp(ctx, g, true)
+			if err != nil {
+				return err
+			}
+			defer a.Close()
+			if token == "" {
+				fmt.Fprintf(cmd.ErrOrStderr(), "OpenHaul Guard API listening on %s\n", httpapi.ListenURL(listen))
+			} else {
+				fmt.Fprintf(cmd.ErrOrStderr(), "OpenHaul Guard API listening on %s with token auth\n", httpapi.ListenURL(listen))
+			}
+			return httpapi.NewServer(
+				a,
+				httpapi.WithDefaultOffline(g.offline),
+				httpapi.WithToken(token),
+			).Run(ctx, listen)
+		},
+	}
+	cmd.Flags().StringVar(&listen, "listen", "127.0.0.1:8787", "HTTP listen address")
+	cmd.Flags().StringVar(&apiToken, "api-token", "", "Require a bearer token for /v1 endpoints; defaults to OHG_API_TOKEN")
 	return cmd
 }
 

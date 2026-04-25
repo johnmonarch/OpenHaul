@@ -44,6 +44,7 @@ ohg config set
 ohg mcp serve
 ohg packet extract
 ohg packet check
+ohg serve
 ```
 
 ## setup
@@ -240,6 +241,25 @@ Flags:
 Packet extract accepts text files, extensionless text files, and text-based PDFs when `pdftotext` is installed. It writes extracted carrier, contact, insurance, certificate holder, remit-to/payee, and factoring fields as table, JSON, or Markdown.
 
 Packet check uses the same extraction path, runs a carrier lookup, and writes a table, JSON, or Markdown comparison report.
+
+## serve
+
+```bash
+ohg serve [--listen 127.0.0.1:8787] [--api-token <token>]
+```
+
+Runs the local HTTP API for server-side integrations. `/health` is public. `/v1/*` endpoints require a token only when `--api-token` or `OHG_API_TOKEN` is set. Binding to a non-loopback address without a token is refused.
+
+Endpoints:
+
+```text
+GET  /health
+POST /v1/carrier/lookup
+POST /v1/carrier/diff
+POST /v1/packet/extract
+POST /v1/packet/check
+GET  /v1/watch/export
+```
 
 ## Exit Codes
 
