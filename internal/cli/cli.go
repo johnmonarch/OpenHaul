@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	mcpserver "github.com/openhaulguard/openhaulguard/internal/mcp"
 	"github.com/openhaulguard/openhaulguard/internal/packet"
 	"github.com/openhaulguard/openhaulguard/internal/report"
+	"github.com/openhaulguard/openhaulguard/internal/sources/mirror"
 	"github.com/openhaulguard/openhaulguard/internal/version"
 	"github.com/spf13/cobra"
 )
@@ -356,7 +358,7 @@ func carrierDiffCommand(g *globals) *cobra.Command {
 
 func watchCommand(g *globals) *cobra.Command {
 	cmd := &cobra.Command{Use: "watch", Short: "Manage and sync watched carriers"}
-	cmd.AddCommand(watchAddCommand(g), watchRemoveCommand(g), watchListCommand(g), watchSyncCommand(g), watchReportCommand(g))
+	cmd.AddCommand(watchAddCommand(g), watchRemoveCommand(g), watchListCommand(g), watchSyncCommand(g), watchReportCommand(g), watchExportCommand(g))
 	return cmd
 }
 
@@ -518,6 +520,26 @@ func watchReportCommand(g *globals) *cobra.Command {
 	return cmd
 }
 
+func watchExportCommand(g *globals) *cobra.Command {
+	return &cobra.Command{
+		Use:   "export",
+		Short: "Export active watchlist entries",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			a, err := newApp(ctx, g, true)
+			if err != nil {
+				return err
+			}
+			defer a.Close()
+			result, err := a.WatchExport(ctx)
+			if err != nil {
+				return err
+			}
+			return report.WriteWatchExport(cmd.OutOrStdout(), result, g.format)
+		},
+	}
+}
+
 func mirrorCommand(g *globals) *cobra.Command {
 	cmd := &cobra.Command{Use: "mirror", Short: "Manage local bootstrap mirror data"}
 	cmd.AddCommand(&cobra.Command{
@@ -576,6 +598,77 @@ func mirrorCommand(g *globals) *cobra.Command {
 			return nil
 		},
 	})
+	var output, generatedAt, sourceTimestamp, attribution string
+	buildCmd := &cobra.Command{
+		Use:   "build <company-census-json>",
+		Args:  cobra.ExactArgs(1),
+		Short: "Build a local bootstrap mirror from company census JSON rows",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body, err := os.ReadFile(args[0])
+			if err != nil {
+				return err
+			}
+			genTime := time.Now().UTC()
+			if strings.TrimSpace(generatedAt) != "" {
+				genTime, err = parseTimestampFlag(generatedAt)
+				if err != nil {
+					return apperrors.Wrap(apperrors.CodeInvalidArgs, "invalid --generated-at value", "Use RFC3339 like 2026-04-25T12:00:00Z or a date like 2026-04-25", err)
+				}
+			}
+			index, err := mirror.BuildCompanyCensusJSON(body, mirror.BuildOptions{
+				GeneratedAt:     genTime,
+				SourceTimestamp: sourceTimestamp,
+				Attribution:     attribution,
+			})
+			if err != nil {
+				return err
+			}
+			outPath := strings.TrimSpace(output)
+			if outPath == "" {
+				cfg, err := config.Load(config.Overrides{Home: g.home, ConfigPath: g.configPath})
+				if err != nil {
+					return err
+				}
+				if err := cfg.EnsureDirs(); err != nil {
+					return err
+				}
+				outPath = cfg.Sources.Mirror.LocalPath
+			}
+			encoded, err := json.MarshalIndent(index, "", "  ")
+			if err != nil {
+				return err
+			}
+			encoded = append(encoded, '\n')
+			if outPath == "-" {
+				_, err = cmd.OutOrStdout().Write(encoded)
+				return err
+			}
+			if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
+				return err
+			}
+			if err := os.WriteFile(outPath, encoded, 0o600); err != nil {
+				return err
+			}
+			if g.format == "json" {
+				enc := json.NewEncoder(cmd.OutOrStdout())
+				enc.SetIndent("", "  ")
+				return enc.Encode(map[string]any{
+					"path":             outPath,
+					"carrier_count":    len(index.Carriers),
+					"generated_at":     index.GeneratedAt,
+					"source_timestamp": index.SourceTimestamp,
+					"attribution":      index.Attribution,
+				})
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Built bootstrap mirror: %d carriers\nPath: %s\n", len(index.Carriers), outPath)
+			return nil
+		},
+	}
+	buildCmd.Flags().StringVar(&output, "output", "", "Write mirror JSON to path, or '-' for stdout; defaults to configured local mirror path")
+	buildCmd.Flags().StringVar(&generatedAt, "generated-at", "", "Mirror generated timestamp as RFC3339 or YYYY-MM-DD; defaults to now")
+	buildCmd.Flags().StringVar(&sourceTimestamp, "source-timestamp", "", "Source data timestamp or date")
+	buildCmd.Flags().StringVar(&attribution, "attribution", "", "Attribution text for the mirror")
+	cmd.AddCommand(buildCmd)
 	return cmd
 }
 
@@ -798,6 +891,17 @@ func setConfigValue(cfg *config.Config, key, value string) error {
 		return apperrors.New(apperrors.CodeInvalidArgs, "unknown config key", "")
 	}
 	return nil
+}
+
+func parseTimestampFlag(value string) (time.Time, error) {
+	value = strings.TrimSpace(value)
+	if t, err := time.Parse(time.RFC3339, value); err == nil {
+		return t.UTC(), nil
+	}
+	if t, err := time.Parse("2006-01-02", value); err == nil {
+		return t.UTC(), nil
+	}
+	return time.Time{}, fmt.Errorf("unsupported timestamp %q", value)
 }
 
 func userError(err error) string {

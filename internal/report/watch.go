@@ -26,6 +26,79 @@ func WriteWatch(w io.Writer, result app.WatchReport, format string) error {
 	}
 }
 
+func WriteWatchExport(w io.Writer, result app.WatchExportResult, format string) error {
+	switch strings.ToLower(format) {
+	case "json":
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		return enc.Encode(result)
+	case "markdown", "md":
+		_, err := fmt.Fprint(w, WatchExportMarkdown(result))
+		return err
+	case "table", "":
+		_, err := fmt.Fprint(w, WatchExportTable(result))
+		return err
+	default:
+		return fmt.Errorf("unsupported format %q", format)
+	}
+}
+
+func WatchExportMarkdown(result app.WatchExportResult) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "# OpenHaul Guard Watchlist Export\n\n")
+	fmt.Fprintf(&b, "Generated: %s\n", result.GeneratedAt)
+	fmt.Fprintf(&b, "Total: %d\n\n", result.Total)
+	fmt.Fprintf(&b, "| Identifier | Normalized | USDOT | Label | Active | Created | Updated | Last synced |\n|---|---|---|---|---|---|---|---|\n")
+	for _, item := range result.Items {
+		fmt.Fprintf(&b, "| %s %s | %s | %s | %s | %t | %s | %s | %s |\n",
+			strings.ToUpper(item.IdentifierType),
+			escape(item.IdentifierValue),
+			escape(item.NormalizedValue),
+			escape(item.USDOTNumber),
+			escape(item.Label),
+			item.Active,
+			escape(item.CreatedAt),
+			escape(item.UpdatedAt),
+			escape(item.LastSyncedAt))
+	}
+	return b.String()
+}
+
+func WatchExportTable(result app.WatchExportResult) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "OpenHaul Guard watchlist export\n\n")
+	fmt.Fprintf(&b, "Generated: %s\n", result.GeneratedAt)
+	fmt.Fprintf(&b, "Total: %d\n\n", result.Total)
+	if len(result.Items) == 0 {
+		fmt.Fprintf(&b, "No active watchlist entries.\n")
+		return b.String()
+	}
+	for _, item := range result.Items {
+		fmt.Fprintf(&b, "%s %s", strings.ToUpper(item.IdentifierType), item.IdentifierValue)
+		if item.NormalizedValue != "" && item.NormalizedValue != item.IdentifierValue {
+			fmt.Fprintf(&b, " normalized %s", item.NormalizedValue)
+		}
+		if item.USDOTNumber != "" {
+			fmt.Fprintf(&b, " USDOT %s", item.USDOTNumber)
+		}
+		if item.Label != "" {
+			fmt.Fprintf(&b, " [%s]", item.Label)
+		}
+		fmt.Fprintf(&b, " active=%t", item.Active)
+		if item.CreatedAt != "" {
+			fmt.Fprintf(&b, " created=%s", item.CreatedAt)
+		}
+		if item.UpdatedAt != "" {
+			fmt.Fprintf(&b, " updated=%s", item.UpdatedAt)
+		}
+		if item.LastSyncedAt != "" {
+			fmt.Fprintf(&b, " last_synced=%s", item.LastSyncedAt)
+		}
+		fmt.Fprintf(&b, "\n")
+	}
+	return b.String()
+}
+
 func WatchMarkdown(result app.WatchReport) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# OpenHaul Guard Watch Report\n\n")

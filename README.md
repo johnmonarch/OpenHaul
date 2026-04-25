@@ -11,10 +11,10 @@ This repository contains the first Go CLI implementation:
 - Local setup, config, SQLite storage, and doctor checks
 - FMCSA QCMobile live lookup with a user-provided WebKey
 - Local cache and offline lookup after a carrier has been observed
-- Local JSON bootstrap mirror import and no-key mirror lookup fallback
+- Local JSON bootstrap mirror build/import and no-key mirror lookup fallback
 - Carrier lookup reports in table, JSON, or Markdown
 - Local carrier diffs across stored observations
-- Watchlist add, remove, list, sync, and reports
+- Watchlist add, remove, list, sync, reports, and export
 - Text/PDF carrier packet extraction and checks against lookup results
 - Developer-preview MCP JSON-RPC server over stdio
 
@@ -64,10 +64,10 @@ If you built locally and did not install the binary, use `./ohg`:
   --format markdown
 ```
 
-Import a local bootstrap mirror for no-key lookup fallback:
+Build or import a local bootstrap mirror for no-key lookup fallback:
 
 ```bash
-ohg mirror import examples/fixtures/mirror/carriers.json
+ohg mirror build examples/fixtures/socrata/company_census_rows.json
 ohg carrier lookup --mc 123456 --format json
 ```
 

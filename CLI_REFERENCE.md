@@ -33,7 +33,9 @@ ohg watch remove
 ohg watch list
 ohg watch sync
 ohg watch report
+ohg watch export
 ohg mirror status
+ohg mirror build
 ohg mirror import
 ohg config path
 ohg config list
@@ -127,19 +129,31 @@ ohg watch remove --dot <number>
 ohg watch list
 ohg watch sync [--force-refresh]
 ohg watch report [--since 24h] [--label <text>] [--format table|json|markdown]
+ohg watch export [--format table|json|markdown]
 ```
 
 `watch sync` runs lookup for active watchlist entries and updates `last_synced_at` when successful.
 `watch report` summarizes active watchlist changes from local observations since the requested duration or date.
+`watch export` writes active watchlist entries for reports, backups, or scheduled jobs.
 
 ## mirror
 
 ```bash
 ohg mirror status
+ohg mirror build <company-census-json> [--output <path>]
 ohg mirror import <path>
 ```
 
-`mirror import` installs a local JSON bootstrap mirror at the configured mirror path. When no FMCSA WebKey is configured and the carrier is not already cached, `carrier lookup` can use this local mirror and marks the lookup mode as `mirror`.
+`mirror build` converts DOT/DataHub Company Census JSON rows into the local mirror format. If `--output` is omitted, it writes to the configured local mirror path. `mirror import` installs an existing local JSON bootstrap mirror at the configured mirror path. When no FMCSA WebKey is configured and the carrier is not already cached, `carrier lookup` can use this local mirror and marks the lookup mode as `mirror`.
+
+Build flags:
+
+```text
+--attribution string        Attribution text for the mirror
+--generated-at string       Mirror generated timestamp as RFC3339 or YYYY-MM-DD
+--output string             Write mirror JSON to path, or '-' for stdout
+--source-timestamp string   Source data timestamp or date
+```
 
 The initial mirror schema is:
 
@@ -223,7 +237,7 @@ Flags:
 --mc string    Motor Carrier docket number
 ```
 
-Packet extract accepts text files, extensionless text files, and text-based PDFs when `pdftotext` is installed. It writes extracted carrier fields as table, JSON, or Markdown.
+Packet extract accepts text files, extensionless text files, and text-based PDFs when `pdftotext` is installed. It writes extracted carrier, contact, insurance, certificate holder, remit-to/payee, and factoring fields as table, JSON, or Markdown.
 
 Packet check uses the same extraction path, runs a carrier lookup, and writes a table, JSON, or Markdown comparison report.
 

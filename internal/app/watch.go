@@ -38,12 +38,61 @@ type WatchReportItem struct {
 	Error            string             `json:"error,omitempty"`
 }
 
+type WatchExportResult struct {
+	SchemaVersion string            `json:"schema_version"`
+	ReportType    string            `json:"report_type"`
+	GeneratedAt   string            `json:"generated_at"`
+	Total         int               `json:"total"`
+	Items         []WatchExportItem `json:"items"`
+}
+
+type WatchExport = WatchExportResult
+
+type WatchExportItem struct {
+	IdentifierType  string `json:"identifier_type"`
+	IdentifierValue string `json:"identifier_value"`
+	NormalizedValue string `json:"normalized_value"`
+	USDOTNumber     string `json:"usdot_number,omitempty"`
+	Label           string `json:"label,omitempty"`
+	Active          bool   `json:"active"`
+	CreatedAt       string `json:"created_at"`
+	UpdatedAt       string `json:"updated_at"`
+	LastSyncedAt    string `json:"last_synced_at,omitempty"`
+}
+
 func (a *App) WatchRemove(ctx context.Context, typ, value string) (bool, error) {
 	typ, value, err := normalize.Identifier(typ, value)
 	if err != nil {
 		return false, err
 	}
 	return a.Store.RemoveWatch(ctx, typ, value)
+}
+
+func (a *App) WatchExport(ctx context.Context) (WatchExportResult, error) {
+	items, err := a.Store.ExportWatch(ctx)
+	if err != nil {
+		return WatchExportResult{}, err
+	}
+	out := WatchExportResult{
+		SchemaVersion: domain.SchemaVersion,
+		ReportType:    "watchlist_export_report",
+		GeneratedAt:   time.Now().UTC().Format(time.RFC3339),
+		Total:         len(items),
+	}
+	for _, item := range items {
+		out.Items = append(out.Items, WatchExportItem{
+			IdentifierType:  item.IdentifierType,
+			IdentifierValue: item.IdentifierValue,
+			NormalizedValue: item.NormalizedValue,
+			USDOTNumber:     item.USDOTNumber,
+			Label:           item.Label,
+			Active:          item.Active,
+			CreatedAt:       item.CreatedAt,
+			UpdatedAt:       item.UpdatedAt,
+			LastSyncedAt:    item.LastSyncedAt,
+		})
+	}
+	return out, nil
 }
 
 func (a *App) WatchReport(ctx context.Context, since, label string) (WatchReport, error) {

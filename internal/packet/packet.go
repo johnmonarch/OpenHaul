@@ -20,13 +20,25 @@ import (
 )
 
 type ExtractedFields struct {
-	LegalName   string              `json:"legal_name,omitempty"`
-	DBAName     string              `json:"dba_name,omitempty"`
-	USDOTNumber string              `json:"usdot_number,omitempty"`
-	Identifiers []domain.Identifier `json:"identifiers,omitempty"`
-	Address     domain.Address      `json:"address,omitempty"`
-	RawAddress  string              `json:"raw_address,omitempty"`
-	Contact     domain.Contact      `json:"contact,omitempty"`
+	LegalName         string              `json:"legal_name,omitempty"`
+	DBAName           string              `json:"dba_name,omitempty"`
+	USDOTNumber       string              `json:"usdot_number,omitempty"`
+	Identifiers       []domain.Identifier `json:"identifiers,omitempty"`
+	Address           domain.Address      `json:"address,omitempty"`
+	RawAddress        string              `json:"raw_address,omitempty"`
+	Contact           domain.Contact      `json:"contact,omitempty"`
+	Insurance         *ExtractedInsurance `json:"insurance,omitempty"`
+	CertificateHolder string              `json:"certificate_holder,omitempty"`
+	RemitTo           string              `json:"remit_to,omitempty"`
+	Payee             string              `json:"payee,omitempty"`
+	FactoringCompany  string              `json:"factoring_company,omitempty"`
+}
+
+type ExtractedInsurance struct {
+	Carrier        string `json:"carrier,omitempty"`
+	PolicyNumber   string `json:"policy_number,omitempty"`
+	EffectiveDate  string `json:"effective_date,omitempty"`
+	ExpirationDate string `json:"expiration_date,omitempty"`
 }
 
 type FieldComparison struct {
@@ -78,6 +90,12 @@ var (
 	emailRE     = regexp.MustCompile(`(?i)\b[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}\b`)
 	addressRE   = regexp.MustCompile(`(?im)^\s*(?:physical\s+address|business\s+address|carrier\s+address|street\s+address|address)\s*[:\-]\s*(.+?)\s*$`)
 	cityStateRE = regexp.MustCompile(`(?i)^\s*(.+?)\s*,\s*([^,]+?)\s*,\s*([A-Z]{2})\s+([0-9]{5}(?:-[0-9]{4})?)(?:\s*,\s*(?:US|USA|United States))?\s*$`)
+
+	insuranceCarrierRE = regexp.MustCompile(`(?im)^\s*(?:insurance\s+(?:carrier|company|provider)|liability\s+(?:carrier|insurer)|cargo\s+(?:carrier|insurer)|insurer|underwriter)\s*[:\-]\s*(.+?)\s*$`)
+	insurerLetterRE    = regexp.MustCompile(`(?im)^\s*insurer\s+[A-Z]\s*:?\s*(.+?)\s*$`)
+	policyNumberRE     = regexp.MustCompile(`(?im)^\s*(?:insurance\s+)?policy\s*(?:number|no\.?|#)?\s*[:#\-]\s*(.+?)\s*$`)
+	policyPeriodRE     = regexp.MustCompile(`(?im)^\s*(?:policy|coverage)\s+(?:term|period)\s*[:\-]\s*(.+?)\s*$`)
+	dateTokenRE        = regexp.MustCompile(`(?i)\b(?:\d{4}-\d{1,2}-\d{1,2}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|[A-Z]{3,9}\.?\s+\d{1,2},?\s+\d{4}|\d{1,2}\s+[A-Z]{3,9}\.?\s+\d{4})\b`)
 )
 
 func Check(ctx context.Context, packetPath string, lookup domain.LookupResult) (CheckResult, error) {
@@ -177,6 +195,11 @@ func ExtractFields(text string) ExtractedFields {
 	}
 	out.RawAddress = extractAddress(text)
 	out.Address = parseAddress(out.RawAddress)
+	out.Insurance = extractInsurance(text)
+	out.CertificateHolder = extractCertificateHolder(text)
+	out.RemitTo = extractBlock(text, []string{"remit to", "remit-to", "remittance address", "payment address"}, nil, 4)
+	out.Payee = extractBlock(text, []string{"payee", "pay to", "checks payable to", "make payable to"}, nil, 2)
+	out.FactoringCompany = extractBlock(text, []string{"factoring company", "factor", "factoring"}, nil, 3)
 	return out
 }
 
@@ -188,6 +211,7 @@ func Compare(packetFields ExtractedFields, carrier domain.CarrierProfile) []Fiel
 	out = append(out, compareAddress("physical_address", packetFields.RawAddress, joinAddress(carrier.PhysicalAddress)))
 	out = append(out, comparePhone("phone", packetFields.Contact.Phone, carrier.Contact.Phone))
 	out = append(out, compareEmail("email", packetFields.Contact.Email, carrier.Contact.Email))
+	out = append(out, compareInsurance(packetFields.Insurance, carrier.Insurance)...)
 
 	packetIDs := identifiersByType(packetFields.Identifiers)
 	sourceIDs := identifiersByType(carrier.Identifiers)
@@ -249,6 +273,15 @@ func ExtractMarkdown(result ExtractResult) string {
 	fmt.Fprintf(&b, "| Address | %s |\n", escape(result.Extracted.RawAddress))
 	fmt.Fprintf(&b, "| Phone | %s |\n", escape(result.Extracted.Contact.Phone))
 	fmt.Fprintf(&b, "| Email | %s |\n", escape(result.Extracted.Contact.Email))
+	insurance := insuranceFields(result.Extracted.Insurance)
+	fmt.Fprintf(&b, "| Insurance carrier | %s |\n", escape(insurance.Carrier))
+	fmt.Fprintf(&b, "| Insurance policy number | %s |\n", escape(insurance.PolicyNumber))
+	fmt.Fprintf(&b, "| Insurance effective date | %s |\n", escape(insurance.EffectiveDate))
+	fmt.Fprintf(&b, "| Insurance expiration date | %s |\n", escape(insurance.ExpirationDate))
+	fmt.Fprintf(&b, "| Certificate holder | %s |\n", escape(result.Extracted.CertificateHolder))
+	fmt.Fprintf(&b, "| Remit to | %s |\n", escape(result.Extracted.RemitTo))
+	fmt.Fprintf(&b, "| Payee | %s |\n", escape(result.Extracted.Payee))
+	fmt.Fprintf(&b, "| Factoring company | %s |\n", escape(result.Extracted.FactoringCompany))
 	for _, id := range result.Extracted.Identifiers {
 		fmt.Fprintf(&b, "| Identifier %s | %s |\n", escape(id.Type), escape(id.Value))
 	}
@@ -269,6 +302,15 @@ func ExtractTable(result ExtractResult) string {
 	fmt.Fprintf(&b, "Address: %s\n", blank(result.Extracted.RawAddress))
 	fmt.Fprintf(&b, "Phone: %s\n", blank(result.Extracted.Contact.Phone))
 	fmt.Fprintf(&b, "Email: %s\n", blank(result.Extracted.Contact.Email))
+	insurance := insuranceFields(result.Extracted.Insurance)
+	fmt.Fprintf(&b, "Insurance carrier: %s\n", blank(insurance.Carrier))
+	fmt.Fprintf(&b, "Insurance policy number: %s\n", blank(insurance.PolicyNumber))
+	fmt.Fprintf(&b, "Insurance effective date: %s\n", blank(insurance.EffectiveDate))
+	fmt.Fprintf(&b, "Insurance expiration date: %s\n", blank(insurance.ExpirationDate))
+	fmt.Fprintf(&b, "Certificate holder: %s\n", blank(result.Extracted.CertificateHolder))
+	fmt.Fprintf(&b, "Remit to: %s\n", blank(result.Extracted.RemitTo))
+	fmt.Fprintf(&b, "Payee: %s\n", blank(result.Extracted.Payee))
+	fmt.Fprintf(&b, "Factoring company: %s\n", blank(result.Extracted.FactoringCompany))
 	return b.String()
 }
 
@@ -367,6 +409,182 @@ func extractAddress(text string) string {
 	return ""
 }
 
+func extractInsurance(text string) *ExtractedInsurance {
+	out := ExtractedInsurance{
+		Carrier:       cleanValue(firstSubmatch(insuranceCarrierRE, text)),
+		PolicyNumber:  cleanPolicyNumber(firstSubmatch(policyNumberRE, text)),
+		EffectiveDate: extractDateAfterLabel(text, []string{"effective date", "policy effective", "policy effective date", "eff date", "eff. date"}),
+		ExpirationDate: extractDateAfterLabel(text, []string{
+			"expiration date",
+			"expiry date",
+			"policy expiration",
+			"policy expiration date",
+			"policy exp",
+			"exp date",
+			"exp. date",
+			"expires",
+		}),
+	}
+	if out.Carrier == "" {
+		out.Carrier = cleanValue(firstSubmatch(insurerLetterRE, text))
+	}
+	if period := firstSubmatch(policyPeriodRE, text); period != "" {
+		dates := dateTokens(period)
+		if out.EffectiveDate == "" && len(dates) > 0 {
+			out.EffectiveDate = normalizeDate(dates[0])
+		}
+		if out.ExpirationDate == "" && len(dates) > 1 {
+			out.ExpirationDate = normalizeDate(dates[1])
+		}
+	}
+	fillInsuranceFromPolicyTable(text, &out)
+	if out.Carrier == "" && out.PolicyNumber == "" && out.EffectiveDate == "" && out.ExpirationDate == "" {
+		return nil
+	}
+	return &out
+}
+
+func fillInsuranceFromPolicyTable(text string, out *ExtractedInsurance) {
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		heading := strings.ToLower(line)
+		if !(strings.Contains(heading, "policy") && (strings.Contains(heading, "eff") || strings.Contains(heading, "exp"))) &&
+			!strings.Contains(heading, "type of insurance") {
+			continue
+		}
+		for _, next := range lines[i+1 : min(len(lines), i+7)] {
+			dates := dateTokens(next)
+			if len(dates) < 2 {
+				continue
+			}
+			if out.EffectiveDate == "" {
+				out.EffectiveDate = normalizeDate(dates[0])
+			}
+			if out.ExpirationDate == "" {
+				out.ExpirationDate = normalizeDate(dates[1])
+			}
+			if out.PolicyNumber == "" {
+				out.PolicyNumber = policyNumberBeforeDate(next, dates[0])
+			}
+			return
+		}
+	}
+}
+
+func policyNumberBeforeDate(line, firstDate string) string {
+	before, _, _ := strings.Cut(line, firstDate)
+	fields := strings.Fields(before)
+	for i := len(fields) - 1; i >= 0; i-- {
+		candidate := cleanPolicyNumber(fields[i])
+		if len(normalizePolicyNumber(candidate)) >= 4 {
+			return candidate
+		}
+	}
+	return ""
+}
+
+func extractCertificateHolder(text string) string {
+	return extractBlock(text, []string{"certificate holder", "cert holder"}, []string{
+		"cancellation",
+		"authorized representative",
+		"description of operations",
+		"insurer",
+		"coverage",
+	}, 5)
+}
+
+func extractDateAfterLabel(text string, labels []string) string {
+	for _, line := range strings.Split(text, "\n") {
+		if value, ok := valueAfterLabel(line, labels); ok {
+			if date := firstDate(value); date != "" {
+				return normalizeDate(date)
+			}
+		}
+	}
+	return ""
+}
+
+func extractBlock(text string, labels []string, stopLabels []string, maxLines int) string {
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		if value, ok := valueAfterLabel(line, labels); ok {
+			if cleaned := cleanValue(value); cleaned != "" {
+				return cleaned
+			}
+			return collectBlock(lines[i+1:], stopLabels, maxLines)
+		}
+		if lineIsLabel(line, labels) {
+			return collectBlock(lines[i+1:], stopLabels, maxLines)
+		}
+	}
+	return ""
+}
+
+func collectBlock(lines []string, stopLabels []string, maxLines int) string {
+	var parts []string
+	for _, line := range lines {
+		cleaned := cleanValue(line)
+		if cleaned == "" {
+			if len(parts) > 0 {
+				break
+			}
+			continue
+		}
+		if lineIsLabel(cleaned, stopLabels) || looksLikeLabel(cleaned) {
+			break
+		}
+		parts = append(parts, cleaned)
+		if len(parts) == maxLines {
+			break
+		}
+	}
+	return strings.Join(parts, ", ")
+}
+
+func valueAfterLabel(line string, labels []string) (string, bool) {
+	trimmed := strings.TrimSpace(line)
+	for _, label := range labels {
+		pattern := `(?i)^\s*` + flexibleLabelPattern(label) + `\s*(?::|\-|\x{2013}|\x{2014})\s*(.*?)\s*$`
+		matches := regexp.MustCompile(pattern).FindStringSubmatch(trimmed)
+		if len(matches) == 2 {
+			return matches[1], true
+		}
+	}
+	return "", false
+}
+
+func lineIsLabel(line string, labels []string) bool {
+	normalizedLine := normalizeLabel(line)
+	for _, label := range labels {
+		if normalizedLine == normalizeLabel(label) {
+			return true
+		}
+	}
+	return false
+}
+
+func flexibleLabelPattern(label string) string {
+	parts := strings.FieldsFunc(strings.ToLower(label), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+	var escaped []string
+	for _, part := range parts {
+		if part != "" {
+			escaped = append(escaped, regexp.QuoteMeta(part))
+		}
+	}
+	return strings.Join(escaped, `[\s\-/]*`)
+}
+
+func normalizeLabel(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	s = strings.Trim(s, " \t:-#")
+	fields := strings.FieldsFunc(s, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+	return strings.Join(fields, " ")
+}
+
 func looksLikeLabel(s string) bool {
 	if !strings.Contains(s, ":") {
 		return false
@@ -412,6 +630,128 @@ func appendIdentifier(ids []domain.Identifier, typ, value string) []domain.Ident
 		}
 	}
 	return append(ids, domain.Identifier{Type: typ, Value: value})
+}
+
+func compareInsurance(packetInsurance *ExtractedInsurance, sourceInsurance []domain.InsuranceRecord) []FieldComparison {
+	packet := insuranceFields(packetInsurance)
+	source, ok := selectInsuranceRecord(packetInsurance, sourceInsurance)
+	if !ok && packet.Carrier == "" && packet.PolicyNumber == "" && packet.EffectiveDate == "" && packet.ExpirationDate == "" {
+		return nil
+	}
+
+	var out []FieldComparison
+	out = appendRelevant(out, compareText("insurance.carrier", packet.Carrier, source.InsurerName, true))
+	out = appendRelevant(out, comparePolicyNumber("insurance.policy_number", packet.PolicyNumber, source.PolicyNumber))
+	out = appendRelevant(out, compareDate("insurance.effective_date", packet.EffectiveDate, source.EffectiveDate))
+	out = appendRelevant(out, compareDate("insurance.expiration_date", packet.ExpirationDate, sourceInsuranceExpiration(source)))
+	return out
+}
+
+func appendRelevant(comparisons []FieldComparison, comparison FieldComparison) []FieldComparison {
+	if comparison.Status == "missing_both" {
+		return comparisons
+	}
+	return append(comparisons, comparison)
+}
+
+func selectInsuranceRecord(packetInsurance *ExtractedInsurance, records []domain.InsuranceRecord) (domain.InsuranceRecord, bool) {
+	if len(records) == 0 {
+		return domain.InsuranceRecord{}, false
+	}
+	packet := insuranceFields(packetInsurance)
+	bestScore := -1
+	bestIndex := -1
+	for i, record := range records {
+		if !insuranceRecordHasData(record) {
+			continue
+		}
+		score := 0
+		if packet.PolicyNumber != "" && record.PolicyNumber != "" && normalizePolicyNumber(packet.PolicyNumber) == normalizePolicyNumber(record.PolicyNumber) {
+			score += 100
+		}
+		if packet.Carrier != "" && record.InsurerName != "" {
+			packetCarrier := comparableText(packet.Carrier)
+			sourceCarrier := comparableText(record.InsurerName)
+			switch {
+			case packetCarrier == sourceCarrier:
+				score += 30
+			case fuzzyScore(packetCarrier, sourceCarrier) >= 0.9:
+				score += 20
+			}
+		}
+		if packet.EffectiveDate != "" && record.EffectiveDate != "" && normalizeDate(packet.EffectiveDate) == normalizeDate(record.EffectiveDate) {
+			score += 10
+		}
+		if packet.ExpirationDate != "" && sourceInsuranceExpiration(record) != "" && normalizeDate(packet.ExpirationDate) == normalizeDate(sourceInsuranceExpiration(record)) {
+			score += 10
+		}
+		if score > bestScore {
+			bestScore = score
+			bestIndex = i
+		}
+	}
+	if bestIndex >= 0 {
+		return records[bestIndex], true
+	}
+	return domain.InsuranceRecord{}, false
+}
+
+func insuranceRecordHasData(record domain.InsuranceRecord) bool {
+	return strings.TrimSpace(record.InsurerName) != "" ||
+		strings.TrimSpace(record.PolicyNumber) != "" ||
+		strings.TrimSpace(record.EffectiveDate) != "" ||
+		strings.TrimSpace(record.CancellationDate) != "" ||
+		strings.TrimSpace(record.CancelEffectiveDate) != ""
+}
+
+func sourceInsuranceExpiration(record domain.InsuranceRecord) string {
+	if strings.TrimSpace(record.CancelEffectiveDate) != "" {
+		return record.CancelEffectiveDate
+	}
+	return record.CancellationDate
+}
+
+func insuranceFields(insurance *ExtractedInsurance) ExtractedInsurance {
+	if insurance == nil {
+		return ExtractedInsurance{}
+	}
+	return *insurance
+}
+
+func comparePolicyNumber(field, packetValue, sourceValue string) FieldComparison {
+	packetValue = cleanPolicyNumber(packetValue)
+	sourceValue = cleanPolicyNumber(sourceValue)
+	base := FieldComparison{Field: field, PacketValue: packetValue, SourceValue: sourceValue}
+	if missingStatus(&base) {
+		return base
+	}
+	if normalizePolicyNumber(packetValue) == normalizePolicyNumber(sourceValue) {
+		base.Status = "match"
+		base.Method = "normalized"
+		base.Score = 1
+		return base
+	}
+	base.Status = "mismatch"
+	base.Method = "normalized"
+	return base
+}
+
+func compareDate(field, packetValue, sourceValue string) FieldComparison {
+	packetDate := normalizeDate(packetValue)
+	sourceDate := normalizeDate(sourceValue)
+	base := FieldComparison{Field: field, PacketValue: packetDate, SourceValue: sourceDate}
+	if missingStatus(&base) {
+		return base
+	}
+	if packetDate == sourceDate {
+		base.Status = "match"
+		base.Method = "normalized"
+		base.Score = 1
+		return base
+	}
+	base.Status = "mismatch"
+	base.Method = "normalized"
+	return base
 }
 
 func compareText(field, packetValue, sourceValue string, allowFuzzy bool) FieldComparison {
@@ -658,6 +998,77 @@ func joinAddress(a domain.Address) string {
 		}
 	}
 	return strings.Join(out, ", ")
+}
+
+func cleanPolicyNumber(s string) string {
+	s = cleanValue(s)
+	s = strings.Trim(s, " \t#")
+	if date := firstDate(s); date != "" {
+		before, _, _ := strings.Cut(s, date)
+		if strings.TrimSpace(before) != "" {
+			s = before
+		}
+	}
+	return strings.Trim(s, " \t#:-")
+}
+
+func normalizePolicyNumber(s string) string {
+	var b strings.Builder
+	for _, r := range strings.ToUpper(s) {
+		if (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+func firstDate(s string) string {
+	dates := dateTokens(s)
+	if len(dates) == 0 {
+		return ""
+	}
+	return dates[0]
+}
+
+func dateTokens(s string) []string {
+	return dateTokenRE.FindAllString(s, -1)
+}
+
+func normalizeDate(s string) string {
+	s = cleanValue(s)
+	if s == "" {
+		return ""
+	}
+	if date := firstDate(s); date != "" {
+		s = date
+	}
+	s = strings.Trim(s, " \t,.;")
+	layouts := []string{
+		"2006-01-02",
+		"2006-1-2",
+		"01/02/2006",
+		"1/2/2006",
+		"01-02-2006",
+		"1-2-2006",
+		"01/02/06",
+		"1/2/06",
+		"01-02-06",
+		"1-2-06",
+		"Jan 2, 2006",
+		"January 2, 2006",
+		"Jan 2 2006",
+		"January 2 2006",
+		"2 Jan 2006",
+		"02 Jan 2006",
+		"2 January 2006",
+		"02 January 2006",
+	}
+	for _, layout := range layouts {
+		if parsed, err := time.Parse(layout, s); err == nil {
+			return parsed.Format("2006-01-02")
+		}
+	}
+	return s
 }
 
 func digitsOnly(s string) string {

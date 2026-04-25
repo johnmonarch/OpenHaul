@@ -61,6 +61,10 @@ email
 identifier.mc
 identifier.mx
 identifier.ff
+insurance.carrier
+insurance.policy_number
+insurance.effective_date
+insurance.expiration_date
 ```
 
 ### Test Fixtures
@@ -76,15 +80,16 @@ Fixture lookups are persisted like other observations and are useful for local v
 
 ## Partially Implemented
 
-The repository includes a Socrata client and a registry entry for the DOT DataHub Company Census File (`az4n-8mr2`). The current carrier lookup path still uses FMCSA QCMobile, local cache, or fixtures.
+The repository includes a Socrata client and a registry entry for the DOT DataHub Company Census File (`az4n-8mr2`). The current carrier lookup path still uses FMCSA QCMobile, local cache, fixtures, or an imported local mirror.
 
-The config model includes bootstrap mirror settings. This build supports a local JSON bootstrap mirror imported with:
+The config model includes bootstrap mirror settings. This build supports creating and importing a local JSON bootstrap mirror:
 
 ```bash
+ohg mirror build examples/fixtures/socrata/company_census_rows.json
 ohg mirror import ./carriers.json
 ```
 
-If no FMCSA WebKey is configured and no fresh local cache exists, carrier lookup can fall back to the imported mirror. Mirror reports use `freshness.mode = "mirror"` and include a warning that the result is not a live FMCSA lookup. A hosted public mirror still requires redistribution and attribution review before launch.
+`mirror build` converts DOT/DataHub Company Census JSON rows into the OpenHaul Guard mirror format with stable carrier ordering and attribution metadata. If no FMCSA WebKey is configured and no fresh local cache exists, carrier lookup can fall back to the imported or built mirror. Mirror reports use `freshness.mode = "mirror"` and include a warning that the result is not a live FMCSA lookup. A hosted public mirror still requires redistribution and attribution review before launch.
 
 ## Freshness and Interpretation
 

@@ -5,6 +5,10 @@ import (
 	"time"
 )
 
+func (s *Store) ExportWatch(ctx context.Context) ([]WatchEntry, error) {
+	return s.ListWatch(ctx)
+}
+
 func (s *Store) RemoveWatch(ctx context.Context, typ, value string) (bool, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	res, err := s.db.ExecContext(ctx, `

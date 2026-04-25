@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/openhaulguard/openhaulguard/internal/app"
 	"github.com/openhaulguard/openhaulguard/internal/domain"
 	"github.com/openhaulguard/openhaulguard/internal/packet"
 )
@@ -105,6 +106,18 @@ func TestCLIIntegrationLocalFlows(t *testing.T) {
 	if !hasPhoneDiff(watchReport.Items[0].Changes) {
 		t.Fatalf("watch report changes did not include expected phone change: %#v", watchReport.Items[0].Changes)
 	}
+	exportOut, _, err := runCLI(t, "--home", home, "--format", "json", "watch", "export")
+	if err != nil {
+		t.Fatalf("watch export failed: %v", err)
+	}
+	var watchExport app.WatchExportResult
+	decodeJSON(t, exportOut, &watchExport)
+	if watchExport.Total != 1 || len(watchExport.Items) != 1 {
+		t.Fatalf("watch export summary = %#v", watchExport)
+	}
+	if watchExport.Items[0].IdentifierType != "mc" || watchExport.Items[0].IdentifierValue != "123456" || watchExport.Items[0].Label != "primary lane" {
+		t.Fatalf("watch export item = %#v", watchExport.Items[0])
+	}
 	removeOut, _, err := runCLI(t, "--home", home, "watch", "remove", "--mc", "123456")
 	if err != nil {
 		t.Fatalf("watch remove failed: %v", err)
@@ -193,9 +206,24 @@ func TestSetupDefaultAndInitAlias(t *testing.T) {
 func TestMirrorImportAndLookup(t *testing.T) {
 	home := t.TempDir()
 	mirrorFixture := fixturePath(t, "mirror", "carriers.json")
+	censusFixture := fixturePath(t, "socrata", "company_census_rows.json")
+	builtMirror := filepath.Join(home, "built-mirror.json")
 
 	if _, _, err := runCLI(t, "--home", home, "--format", "json", "setup", "--quick"); err != nil {
 		t.Fatalf("setup failed: %v", err)
+	}
+	buildOut, _, err := runCLI(t, "--home", home, "--format", "json", "mirror", "build", censusFixture, "--output", builtMirror, "--generated-at", "2026-04-25T12:00:00Z", "--source-timestamp", "2026-04-24")
+	if err != nil {
+		t.Fatalf("mirror build failed: %v", err)
+	}
+	var buildStatus struct {
+		Path         string `json:"path"`
+		CarrierCount int    `json:"carrier_count"`
+		GeneratedAt  string `json:"generated_at"`
+	}
+	decodeJSON(t, buildOut, &buildStatus)
+	if buildStatus.Path != builtMirror || buildStatus.CarrierCount != 2 || buildStatus.GeneratedAt != "2026-04-25T12:00:00Z" {
+		t.Fatalf("mirror build status = %#v", buildStatus)
 	}
 	importOut, _, err := runCLI(t, "--home", home, "--format", "json", "mirror", "import", mirrorFixture)
 	if err != nil {

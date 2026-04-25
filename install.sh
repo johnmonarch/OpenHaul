@@ -4,7 +4,8 @@ set -eu
 OWNER="${OHG_GITHUB_OWNER:-johnmonarch}"
 REPO="${OHG_GITHUB_REPO:-OpenCarrier}"
 BIN_NAME="${OHG_BIN_NAME:-ohg}"
-INSTALL_DIR="${OHG_INSTALL_DIR:-/usr/local/bin}"
+DEFAULT_INSTALL_DIR="/usr/local/bin"
+INSTALL_DIR="${OHG_INSTALL_DIR:-$DEFAULT_INSTALL_DIR}"
 VERSION="${OHG_VERSION:-latest}"
 TMP_DIR="${TMPDIR:-/tmp}/ohg-install.$$"
 
@@ -57,22 +58,45 @@ sha256_file() {
   fi
 }
 
+path_contains_dir() {
+  dir="$1"
+  case ":${PATH:-}:" in
+    *":$dir:"*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 install_binary() {
   src="$1"
   dst="$INSTALL_DIR/$BIN_NAME"
-  mkdir -p "$INSTALL_DIR" 2>/dev/null || true
-  if [ ! -w "$INSTALL_DIR" ]; then
-    if command -v sudo >/dev/null 2>&1; then
-      sudo mkdir -p "$INSTALL_DIR"
-      sudo install -m 0755 "$src" "$dst"
-    else
-      echo "Install directory is not writable: $INSTALL_DIR" >&2
-      echo "Set OHG_INSTALL_DIR to a user-writable directory." >&2
-      exit 1
-    fi
-  else
+
+  if mkdir -p "$INSTALL_DIR" 2>/dev/null && [ -w "$INSTALL_DIR" ]; then
     install -m 0755 "$src" "$dst"
+    return
   fi
+
+  if command -v sudo >/dev/null 2>&1; then
+    echo "Installing to $INSTALL_DIR requires elevated permissions; sudo may prompt." >&2
+    sudo mkdir -p "$INSTALL_DIR"
+    sudo install -m 0755 "$src" "$dst"
+    return
+  fi
+
+  if [ -z "${OHG_INSTALL_DIR:-}" ] && [ -n "${HOME:-}" ]; then
+    INSTALL_DIR="$HOME/.local/bin"
+    dst="$INSTALL_DIR/$BIN_NAME"
+    echo "Install directory is not writable and sudo is unavailable: $DEFAULT_INSTALL_DIR" >&2
+    echo "Installing to user-writable directory instead: $INSTALL_DIR" >&2
+    if mkdir -p "$INSTALL_DIR" 2>/dev/null && [ -w "$INSTALL_DIR" ]; then
+      install -m 0755 "$src" "$dst"
+      return
+    fi
+  fi
+
+  echo "Install directory is not writable: $INSTALL_DIR" >&2
+  echo "Set OHG_INSTALL_DIR to a user-writable directory, for example:" >&2
+  echo "  OHG_INSTALL_DIR=\"\$HOME/.local/bin\" sh install.sh" >&2
+  exit 1
 }
 
 if ! command -v tar >/dev/null 2>&1; then
@@ -161,8 +185,16 @@ install_binary "$binary"
 echo "Installed: $INSTALL_DIR/$BIN_NAME"
 "$INSTALL_DIR/$BIN_NAME" --version || true
 echo
+NEXT_BIN="$BIN_NAME"
+if ! path_contains_dir "$INSTALL_DIR"; then
+  NEXT_BIN="$INSTALL_DIR/$BIN_NAME"
+  echo "PATH note:"
+  echo "  Add $INSTALL_DIR to PATH to run $BIN_NAME from a new shell:"
+  echo "  export PATH=\"$INSTALL_DIR:\$PATH\""
+  echo
+fi
 echo "Next step:"
-echo "  $BIN_NAME setup"
+echo "  $NEXT_BIN setup"
 echo
 echo "For live FMCSA lookups later:"
-echo "  $BIN_NAME setup fmcsa"
+echo "  $NEXT_BIN setup fmcsa"
