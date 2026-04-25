@@ -1,8 +1,12 @@
 .DS_Store
 ohg
+ohg.exe
+*.test
 *.db
 *.db-shm
 *.db-wal
 dist/
 coverage.out
+coverage/
+*.prof
 .openhaulguard/

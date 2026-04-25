@@ -1,7 +1,9 @@
 Carrier Packet
 
 Legal Name: Example Trucking LLC
+DBA: Example Haul
 USDOT: 1234567
 MC: 123456
+Address: 100 Main Street, Memphis, TN 38103
 Phone: (555) 555-5555
 Email: dispatch@exampletrucking.test

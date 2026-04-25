@@ -1,0 +1,58 @@
+version: 2
+
+project_name: ohg
+
+before:
+  hooks:
+    - go mod download
+
+builds:
+  - id: ohg
+    main: ./cmd/ohg
+    binary: ohg
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X github.com/openhaulguard/openhaulguard/internal/version.Version={{ .Version }} -X github.com/openhaulguard/openhaulguard/internal/version.Commit={{ .Commit }} -X github.com/openhaulguard/openhaulguard/internal/version.Date={{ .Date }}
+
+archives:
+  - id: ohg
+    ids:
+      - ohg
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    files:
+      - LICENSE
+      - README.md
+      - INSTALL.md
+      - CLI_REFERENCE.md
+      - CONFIGURATION.md
+      - DATA_SOURCES.md
+      - MCP.md
+
+checksums:
+  - name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"

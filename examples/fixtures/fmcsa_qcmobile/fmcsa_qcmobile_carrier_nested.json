@@ -1,0 +1,53 @@
+{
+  "content": {
+    "carrier": {
+      "identity": {
+        "usdotNumber": "2345678",
+        "legalName": "NESTED FREIGHT LLC",
+        "dbaName": "NESTED LOGISTICS"
+      },
+      "physicalAddress": {
+        "street": "200 Warehouse Avenue",
+        "city": "Dallas",
+        "state": "TX",
+        "postalCode": "75201"
+      },
+      "mailingAddress": {
+        "mailingStreet": "PO Box 200",
+        "mailingCity": "Dallas",
+        "mailingState": "TX",
+        "mailingZip": "75202"
+      },
+      "contacts": {
+        "phoneNumber": "214-555-0101",
+        "faxNumber": "214-555-0102",
+        "emailAddress": "ops@nestedfreight.test"
+      },
+      "operations": {
+        "nbrPowerUnit": "17",
+        "driverTotal": "21",
+        "mcs150FormDate": "04/20/2026"
+      }
+    },
+    "docketNumbers": [
+      {
+        "docketPrefix": "FF",
+        "docketNumber": "765432",
+        "docketStatus": "ACTIVE"
+      }
+    ],
+    "authority": [
+      {
+        "docketType": "FF",
+        "docketNbr": "765432",
+        "authorityType": "BROKER",
+        "authorityStatus": "ACTIVE",
+        "originalAction": "GRANTED",
+        "originalActionDate": "2026-04-21"
+      }
+    ],
+    "safety": {
+      "outOfServiceStatus": "No"
+    }
+  }
+}

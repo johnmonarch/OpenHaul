@@ -1,38 +1,73 @@
-# OpenHaul Guard OSS
+# OpenHaul Guard
 
-OpenHaul Guard is a local-first carrier verification and freight risk review CLI for trucking companies, freight brokers, 3PLs, shippers, and compliance workflows.
+OpenHaul Guard is a local-first carrier verification and freight risk review CLI. It helps brokers, carriers, 3PLs, shippers, and compliance teams compare public carrier records with local observations.
 
-It is an evidence engine, not a blacklist. The tool separates public-record facts, normalized local observations, and OpenHaul Guard risk flags intended for manual review.
+OpenHaul Guard is an evidence tool, not a blacklist. Reports separate source facts from OpenHaul Guard risk flags and are intended for manual review.
 
-## Current Build
+## Current Status
 
-This repository now contains the first Go implementation pass:
+This repository contains the first Go CLI implementation:
+
+- Local setup, config, SQLite storage, and doctor checks
+- FMCSA QCMobile live lookup with a user-provided WebKey
+- Local cache and offline lookup after a carrier has been observed
+- Carrier lookup reports in table, JSON, or Markdown
+- Local carrier diffs across stored observations
+- Watchlist add, list, and sync
+- Text/PDF carrier packet checks against lookup results
+- Developer-preview MCP JSON-RPC server over stdio
+
+## Quick Start
+
+Build from source:
 
 ```bash
-ohg setup --quick --yes
-ohg doctor --format json
-ohg carrier lookup --mc 123456 --fixture examples/fixtures/fmcsa_qcmobile/fmcsa_qcmobile_carrier_valid.json --format markdown
-ohg carrier diff --mc 123456 --since 90d --format json
-ohg watch add --mc 123456
-ohg watch list --format json
-ohg mcp serve --help
+go build -o ohg ./cmd/ohg
 ```
 
-Live FMCSA lookup requires a user-provided FMCSA WebKey:
+Initialize local config and storage:
 
 ```bash
-ohg setup fmcsa
+./ohg setup --quick --yes
+./ohg doctor
 ```
 
-Quick setup initializes local config and SQLite storage without government API keys. Until a redistributable bootstrap mirror is published, arbitrary fresh carrier lookup requires FMCSA credentials or a test fixture.
+Run a fixture-backed lookup without live credentials:
 
-## Implementation Notes
+```bash
+./ohg carrier lookup --mc 123456 \
+  --fixture examples/fixtures/fmcsa_qcmobile/fmcsa_qcmobile_carrier_valid.json \
+  --format markdown
+```
 
-- Primary language: Go
-- CLI framework: Cobra
-- Local database: SQLite via `modernc.org/sqlite`
-- Credential storage: OS keychain via `go-keyring`, with `0600` local fallback
-- Default telemetry: off
-- License: Apache-2.0
+Live FMCSA lookup requires a free FMCSA WebKey:
 
-The full planning/spec bundle lives in `openhaul_guard_spec_docs/`.
+```bash
+./ohg setup fmcsa
+./ohg carrier lookup --mc 123456 --format json
+```
+
+Check a text carrier packet against a lookup result:
+
+```bash
+./ohg packet check examples/fixtures/packets/basic_carrier_packet.txt \
+  --mc 123456 \
+  --fixture examples/fixtures/fmcsa_qcmobile/fmcsa_qcmobile_carrier_valid.json \
+  --format json
+```
+
+## Documentation
+
+- [Install](INSTALL.md)
+- [CLI reference](CLI_REFERENCE.md)
+- [Configuration](CONFIGURATION.md)
+- [Data sources](DATA_SOURCES.md)
+- [MCP](MCP.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security](SECURITY.md)
+
+The original planning/spec bundle remains in `openhaul_guard_spec_docs/`.
+
+## License
+
+Apache License 2.0. See [LICENSE](LICENSE).

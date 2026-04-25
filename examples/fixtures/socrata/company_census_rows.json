@@ -1,0 +1,39 @@
+[
+  {
+    "dot_number": "7654321",
+    "docket_number": "MC654321",
+    "legal_name": "OTHER CARRIER LLC",
+    "dba_name": "OTHER HAUL",
+    "phy_street": "10 Side Street",
+    "phy_city": "Nashville",
+    "phy_state": "TN",
+    "phy_zip": "37201",
+    "telephone": "555-555-0100",
+    "nbr_power_unit": "3",
+    "driver_total": "4",
+    "mcs_150_date": "2026-02-01",
+    "common_authority": "I"
+  },
+  {
+    "dot_number": "1234567",
+    "docket_number": "MC123456",
+    "legal_name": "EXAMPLE TRUCKING LLC",
+    "dba_name": "EXAMPLE HAUL",
+    "phy_street": "100 Main Street",
+    "phy_city": "Memphis",
+    "phy_state": "TN",
+    "phy_zip": "38103",
+    "mailing_street": "PO Box 100",
+    "mailing_city": "Memphis",
+    "mailing_state": "TN",
+    "mailing_zip": "38101",
+    "telephone": "(555) 555-5555",
+    "email_address": "dispatch@exampletrucking.test",
+    "nbr_power_unit": "12",
+    "driver_total": "14",
+    "mcs_150_date": "2026-03-15",
+    "common_authority": "A",
+    "contract_authority": "N",
+    "broker_authority": "N"
+  }
+]

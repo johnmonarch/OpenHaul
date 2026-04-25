@@ -22,9 +22,13 @@ func FMCSAResponsesToCarrier(inputType, inputValue string, responses []fmcsa.Raw
 		if err := json.Unmarshal(response.Body, &payload); err != nil {
 			return domain.CarrierProfile{}, fmt.Errorf("parse FMCSA response %s: %w", response.Endpoint, err)
 		}
+		sourceName := response.Fetch.SourceName
+		if sourceName == "" {
+			sourceName = fmcsa.SourceName
+		}
 		switch {
 		case strings.Contains(response.Endpoint, "/authority"):
-			carrier.Authority = append(carrier.Authority, extractAuthority(payload, observedAt)...)
+			carrier.Authority = append(carrier.Authority, extractAuthority(payload, observedAt, sourceName)...)
 		case strings.Contains(response.Endpoint, "/docket-numbers") || strings.Contains(response.Endpoint, "/docket-number/"):
 			ids, dot := extractIdentifiers(payload)
 			carrier.Identifiers = mergeIdentifiers(carrier.Identifiers, ids)
@@ -36,7 +40,7 @@ func FMCSAResponsesToCarrier(inputType, inputValue string, responses []fmcsa.Raw
 				carrier.Safety.OutOfServiceStatus = v
 			}
 		default:
-			mergeCarrierFields(&carrier, payload, observedAt)
+			mergeCarrierFields(&carrier, payload, observedAt, sourceName)
 		}
 	}
 	if inputType == "dot" && carrier.USDOTNumber == "" {
@@ -46,7 +50,7 @@ func FMCSAResponsesToCarrier(inputType, inputValue string, responses []fmcsa.Raw
 		carrier.Identifiers = mergeIdentifiers(carrier.Identifiers, []domain.Identifier{{Type: strings.ToUpper(inputType), Value: inputValue, Status: "unknown"}})
 	}
 	if carrier.USDOTNumber == "" {
-		if dot := findStringInResponses(responses, "dotNumber", "usdotNumber", "usdot", "dot"); dot != "" {
+		if dot := findStringInResponses(responses, "dotNumber", "usdotNumber", "usdotNo", "usdotNum", "usdot", "dot"); dot != "" {
 			carrier.USDOTNumber = digitsOnly(dot)
 		}
 	}
@@ -59,9 +63,9 @@ func FMCSAResponsesToCarrier(inputType, inputValue string, responses []fmcsa.Raw
 	return carrier, nil
 }
 
-func mergeCarrierFields(carrier *domain.CarrierProfile, payload any, observedAt string) {
+func mergeCarrierFields(carrier *domain.CarrierProfile, payload any, observedAt, sourceName string) {
 	if carrier.USDOTNumber == "" {
-		carrier.USDOTNumber = digitsOnly(findString(payload, "dotNumber", "usdotNumber", "usdot", "dot"))
+		carrier.USDOTNumber = digitsOnly(findString(payload, "dotNumber", "usdotNumber", "usdotNo", "usdotNum", "usdot", "dot"))
 	}
 	if carrier.LegalName == "" {
 		carrier.LegalName = findString(payload, "legalName", "legal_name", "name", "carrierName")
@@ -70,23 +74,23 @@ func mergeCarrierFields(carrier *domain.CarrierProfile, payload any, observedAt 
 		carrier.DBAName = findString(payload, "dbaName", "dba", "doingBusinessAs")
 	}
 	if carrier.PhysicalAddress.Line1 == "" {
-		carrier.PhysicalAddress.Line1 = findString(payload, "phyStreet", "physicalStreet", "physicalAddressLine1", "street")
+		carrier.PhysicalAddress.Line1 = findString(payload, "phyStreet", "physicalStreet", "physicalAddressLine1", "physicalStreetAddress", "street")
 		carrier.PhysicalAddress.Line2 = findString(payload, "phyStreet2", "physicalAddressLine2")
 		carrier.PhysicalAddress.City = findString(payload, "phyCity", "physicalCity", "city")
 		carrier.PhysicalAddress.State = findString(payload, "phyState", "physicalState", "state")
-		carrier.PhysicalAddress.PostalCode = findString(payload, "phyZipcode", "physicalZip", "zipCode", "postalCode")
+		carrier.PhysicalAddress.PostalCode = findString(payload, "phyZipcode", "phyZip", "physicalZip", "physicalPostalCode", "zipCode", "postalCode")
 		carrier.PhysicalAddress.Country = findString(payload, "phyCountry", "physicalCountry", "country")
 	}
 	if carrier.MailingAddress.Line1 == "" {
-		carrier.MailingAddress.Line1 = findString(payload, "mailingStreet", "mailStreet", "mailingAddressLine1")
+		carrier.MailingAddress.Line1 = findString(payload, "mailingStreet", "mailStreet", "mailingAddressLine1", "mailingStreetAddress")
 		carrier.MailingAddress.Line2 = findString(payload, "mailingStreet2", "mailingAddressLine2")
 		carrier.MailingAddress.City = findString(payload, "mailingCity", "mailCity")
 		carrier.MailingAddress.State = findString(payload, "mailingState", "mailState")
-		carrier.MailingAddress.PostalCode = findString(payload, "mailingZip", "mailZip", "mailingPostalCode")
+		carrier.MailingAddress.PostalCode = findString(payload, "mailingZip", "mailZip", "mailingZipcode", "mailingPostalCode")
 		carrier.MailingAddress.Country = findString(payload, "mailingCountry", "mailCountry")
 	}
 	if carrier.Contact.Phone == "" {
-		carrier.Contact.Phone = Phone(findString(payload, "telephone", "phone", "phoneNumber"))
+		carrier.Contact.Phone = Phone(findString(payload, "telephone", "phone", "phoneNumber", "telNum"))
 	}
 	if carrier.Contact.Fax == "" {
 		carrier.Contact.Fax = Phone(findString(payload, "fax", "faxNumber"))
@@ -106,41 +110,41 @@ func mergeCarrierFields(carrier *domain.CarrierProfile, payload any, observedAt 
 	ids, _ := extractIdentifiers(payload)
 	carrier.Identifiers = mergeIdentifiers(carrier.Identifiers, ids)
 	if len(carrier.Authority) == 0 {
-		carrier.Authority = append(carrier.Authority, extractAuthority(payload, observedAt)...)
+		carrier.Authority = append(carrier.Authority, extractAuthority(payload, observedAt, sourceName)...)
 	}
 }
 
 func extractIdentifiers(payload any) ([]domain.Identifier, string) {
 	var ids []domain.Identifier
-	dot := digitsOnly(findString(payload, "dotNumber", "usdotNumber", "usdot", "dot"))
-	walk(payload, func(key string, value any) {
-		v := strings.TrimSpace(fmt.Sprint(value))
-		if v == "" || v == "<nil>" {
-			return
-		}
-		normalizedKey := normalizeKey(key)
-		switch normalizedKey {
-		case "docketnumber", "docketnbr", "mcnumber", "mxnumber", "ffnumber":
-			digits := digitsOnly(v)
+	dot := digitsOnly(findString(payload, "dotNumber", "usdotNumber", "usdotNo", "usdotNum", "usdot", "dot"))
+	for _, item := range candidateMaps(payload) {
+		status := pickString(item, "status", "docketStatus", "docket_status")
+		prefix := pickString(item, "prefix", "docketPrefix", "docketType", "docket_type")
+		for _, spec := range []struct {
+			typ  string
+			keys []string
+		}{
+			{"MC", []string{"mcNumber", "mc_number"}},
+			{"MX", []string{"mxNumber", "mx_number"}},
+			{"FF", []string{"ffNumber", "ff_number"}},
+			{"", []string{"docketNumber", "docketNbr", "docket", "docketNo", "docket_number", "docket_nbr"}},
+		} {
+			raw := pickString(item, spec.keys...)
+			if raw == "" {
+				continue
+			}
+			digits := digitsOnly(raw)
 			if digits == "" {
-				return
+				continue
 			}
-			typ := "MC"
-			if strings.Contains(normalizedKey, "mx") {
-				typ = "MX"
-			}
-			if strings.Contains(normalizedKey, "ff") {
-				typ = "FF"
-			}
-			ids = append(ids, domain.Identifier{Type: typ, Value: digits, Status: findString(payload, "status", "docketStatus")})
-		case "prefix", "docketprefix":
-			_ = v
+			typ := identifierType(spec.typ, prefix, raw)
+			ids = append(ids, domain.Identifier{Type: typ, Value: digits, Status: status})
 		}
-	})
-	return ids, dot
+	}
+	return mergeIdentifiers(nil, ids), dot
 }
 
-func extractAuthority(payload any, observedAt string) []domain.AuthorityRecord {
+func extractAuthority(payload any, observedAt, sourceName string) []domain.AuthorityRecord {
 	var out []domain.AuthorityRecord
 	for _, item := range candidateMaps(payload) {
 		status := pickString(item, "authorityStatus", "status", "authStatus")
@@ -157,9 +161,34 @@ func extractAuthority(payload any, observedAt string) []domain.AuthorityRecord {
 			OriginalActionDate: pickString(item, "originalActionDate", "origActionDate", "grantedDate"),
 			FinalAction:        pickString(item, "finalAction"),
 			FinalActionDate:    pickString(item, "finalActionDate"),
-			Source:             fmcsa.SourceName,
+			Source:             sourceName,
 			ObservedAt:         observedAt,
 		})
+	}
+	for _, item := range candidateMaps(payload) {
+		docketType := pickString(item, "docketType", "prefix", "docketPrefix")
+		docketNumber := digitsOnly(pickString(item, "docketNumber", "docketNbr", "docket"))
+		for _, spec := range []struct {
+			typ  string
+			keys []string
+		}{
+			{"COMMON", []string{"commonAuthority", "common_authority"}},
+			{"CONTRACT", []string{"contractAuthority", "contract_authority"}},
+			{"BROKER", []string{"brokerAuthority", "broker_authority"}},
+		} {
+			status := authorityStatusFromCensusCode(pickString(item, spec.keys...))
+			if status == "" {
+				continue
+			}
+			out = append(out, domain.AuthorityRecord{
+				DocketType:      docketType,
+				DocketNumber:    docketNumber,
+				AuthorityType:   spec.typ,
+				AuthorityStatus: status,
+				Source:          sourceName,
+				ObservedAt:      observedAt,
+			})
+		}
 	}
 	if len(out) == 0 {
 		status := findString(payload, "authorityStatus", "status", "authStatus")
@@ -168,7 +197,7 @@ func extractAuthority(payload any, observedAt string) []domain.AuthorityRecord {
 				AuthorityStatus:    status,
 				AuthorityType:      findString(payload, "authorityType", "type", "authType"),
 				OriginalActionDate: findString(payload, "originalActionDate", "origActionDate", "grantedDate"),
-				Source:             fmcsa.SourceName,
+				Source:             sourceName,
 				ObservedAt:         observedAt,
 			})
 		}
@@ -198,10 +227,7 @@ func findString(payload any, keys ...string) string {
 		if found != "" || !wanted[normalizeKey(key)] {
 			return
 		}
-		found = strings.TrimSpace(fmt.Sprint(value))
-		if found == "<nil>" {
-			found = ""
-		}
+		found = scalarString(value)
 	})
 	return found
 }
@@ -230,10 +256,49 @@ func pickString(m map[string]any, keys ...string) string {
 	}
 	for key, value := range m {
 		if wanted[normalizeKey(key)] {
-			return strings.TrimSpace(fmt.Sprint(value))
+			return scalarString(value)
 		}
 	}
 	return ""
+}
+
+func scalarString(value any) string {
+	switch v := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return strings.TrimSpace(v)
+	case float64, float32, int, int64, int32, uint, uint64, uint32, bool:
+		return strings.TrimSpace(fmt.Sprint(v))
+	default:
+		return ""
+	}
+}
+
+func identifierType(fallback, prefix, raw string) string {
+	for _, value := range []string{fallback, prefix, raw} {
+		value = strings.ToUpper(strings.TrimSpace(value))
+		value = strings.TrimPrefix(value, "#")
+		for _, candidate := range []string{"MC", "MX", "FF"} {
+			if value == candidate || strings.HasPrefix(value, candidate+" ") || strings.HasPrefix(value, candidate+"-") || strings.HasPrefix(value, candidate) {
+				return candidate
+			}
+		}
+	}
+	return "MC"
+}
+
+func authorityStatusFromCensusCode(code string) string {
+	switch strings.ToUpper(strings.TrimSpace(code)) {
+	case "A", "ACTIVE":
+		return "ACTIVE"
+	case "I", "INACTIVE":
+		return "INACTIVE"
+	case "N", "NONE", "NO":
+		return "NONE"
+	default:
+		return strings.TrimSpace(code)
+	}
 }
 
 func mergeIdentifiers(existing, incoming []domain.Identifier) []domain.Identifier {

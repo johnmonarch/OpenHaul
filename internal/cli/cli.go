@@ -14,6 +14,8 @@ import (
 	"github.com/openhaulguard/openhaulguard/internal/config"
 	"github.com/openhaulguard/openhaulguard/internal/credentials"
 	"github.com/openhaulguard/openhaulguard/internal/domain"
+	mcpserver "github.com/openhaulguard/openhaulguard/internal/mcp"
+	"github.com/openhaulguard/openhaulguard/internal/packet"
 	"github.com/openhaulguard/openhaulguard/internal/report"
 	"github.com/openhaulguard/openhaulguard/internal/version"
 	"github.com/spf13/cobra"
@@ -65,7 +67,7 @@ func rootCommand(g *globals) *cobra.Command {
 	root.AddCommand(watchCommand(g))
 	root.AddCommand(configCommand(g))
 	root.AddCommand(mcpCommand(g))
-	root.AddCommand(packetCommand())
+	root.AddCommand(packetCommand(g))
 	return root
 }
 
@@ -491,30 +493,63 @@ func mcpCommand(g *globals) *cobra.Command {
 		Use:   "serve",
 		Short: "Serve MCP over stdio",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			manifest := map[string]any{
-				"status":    "developer_preview",
-				"transport": "stdio",
-				"tools":     []string{"carrier_lookup", "carrier_diff"},
-				"note":      "Full MCP JSON-RPC serving is planned after CLI JSON schemas stabilize.",
+			ctx := cmd.Context()
+			a, err := newApp(ctx, g, true)
+			if err != nil {
+				return err
 			}
-			enc := json.NewEncoder(cmd.OutOrStdout())
-			enc.SetIndent("", "  ")
-			return enc.Encode(manifest)
+			defer a.Close()
+			return mcpserver.NewServer(
+				a,
+				cmd.InOrStdin(),
+				cmd.OutOrStdout(),
+				mcpserver.WithDefaultOffline(g.offline),
+			).Run(ctx)
 		},
 	})
 	return cmd
 }
 
-func packetCommand() *cobra.Command {
+func packetCommand(g *globals) *cobra.Command {
 	cmd := &cobra.Command{Use: "packet", Short: "Carrier packet tools"}
-	cmd.AddCommand(&cobra.Command{
+	var mc, dot string
+	var fixture string
+	checkCmd := &cobra.Command{
 		Use:   "check <path>",
 		Args:  cobra.ExactArgs(1),
 		Short: "Check carrier packet against public records",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return apperrors.New(apperrors.CodePacketParseFailed, "packet checker is not implemented in this first build", "Use carrier lookup and diff first; packet check is the next MVP extension")
+			typ, value, err := exactlyOneIdentifier(map[string]string{"mc": mc, "dot": dot})
+			if err != nil {
+				return err
+			}
+			ctx := cmd.Context()
+			a, err := newApp(ctx, g, true)
+			if err != nil {
+				return err
+			}
+			defer a.Close()
+			lookup, err := a.Lookup(ctx, domain.LookupRequest{
+				IdentifierType:  typ,
+				IdentifierValue: value,
+				Offline:         g.offline,
+				FixturePath:     fixture,
+			})
+			if err != nil {
+				return err
+			}
+			result, err := packet.Check(ctx, args[0], lookup)
+			if err != nil {
+				return err
+			}
+			return packet.Write(cmd.OutOrStdout(), result, g.format)
 		},
-	})
+	}
+	checkCmd.Flags().StringVar(&mc, "mc", "", "Motor Carrier docket number")
+	checkCmd.Flags().StringVar(&dot, "dot", "", "USDOT number")
+	checkCmd.Flags().StringVar(&fixture, "fixture", "", "Hidden test fixture path")
+	_ = checkCmd.Flags().MarkHidden("fixture")
+	cmd.AddCommand(checkCmd)
 	return cmd
 }
 

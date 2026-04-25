@@ -21,6 +21,8 @@ import (
 	"github.com/openhaulguard/openhaulguard/internal/normalize"
 	"github.com/openhaulguard/openhaulguard/internal/scoring"
 	"github.com/openhaulguard/openhaulguard/internal/sources/fmcsa"
+	"github.com/openhaulguard/openhaulguard/internal/sources/registry"
+	"github.com/openhaulguard/openhaulguard/internal/sources/socrata"
 	"github.com/openhaulguard/openhaulguard/internal/store"
 	"github.com/openhaulguard/openhaulguard/internal/version"
 	"golang.org/x/term"
@@ -287,29 +289,194 @@ func (a *App) lookupFixture(ctx context.Context, req domain.LookupRequest) (doma
 		return a.persistPreparedResult(ctx, req, existing, "fixture", []fmcsa.RawResponse{{
 			Endpoint: "fixture:" + req.FixturePath,
 			Body:     body,
-			Fetch: domain.SourceFetchResult{
-				SourceName:         "fixture",
-				Endpoint:           req.FixturePath,
-				RequestMethod:      "GET",
-				RequestURLRedacted: req.FixturePath,
-				FetchedAt:          time.Now().UTC().Format(time.RFC3339),
-				ResponseHash:       normalize.HashRaw(body),
-			},
+			Fetch:    fixtureFetch("fixture", req.FixturePath, req.FixturePath, body),
 		}})
+	}
+	if raw, ok, err := socrataFixtureRaw(req, req.FixturePath, body); ok || err != nil {
+		if err != nil {
+			return domain.LookupResult{}, err
+		}
+		return a.resultFromRaw(ctx, req, []fmcsa.RawResponse{raw}, "fixture")
 	}
 	raw := fmcsa.RawResponse{
 		Endpoint: "fixture:" + filepath.Base(req.FixturePath),
 		Body:     body,
-		Fetch: domain.SourceFetchResult{
-			SourceName:         "fixture",
-			Endpoint:           req.FixturePath,
-			RequestMethod:      "GET",
-			RequestURLRedacted: req.FixturePath,
-			FetchedAt:          time.Now().UTC().Format(time.RFC3339),
-			ResponseHash:       normalize.HashRaw(body),
-		},
+		Fetch:    fixtureFetch("fixture", req.FixturePath, req.FixturePath, body),
 	}
 	return a.resultFromRaw(ctx, req, []fmcsa.RawResponse{raw}, "fixture")
+}
+
+func socrataFixtureRaw(req domain.LookupRequest, fixturePath string, body []byte) (fmcsa.RawResponse, bool, error) {
+	rows, detected, err := socrataFixtureRows(body)
+	if err != nil || !detected {
+		return fmcsa.RawResponse{}, detected, err
+	}
+	row, ok := matchSocrataFixtureRow(req, rows)
+	if !ok {
+		return fmcsa.RawResponse{}, true, apperrors.New(apperrors.CodeSourceNotFound, "Socrata fixture did not contain the requested carrier", "")
+	}
+	rowBody, err := json.Marshal(row)
+	if err != nil {
+		return fmcsa.RawResponse{}, true, err
+	}
+	dataset := registry.MustDatasetByKey(registry.CompanyCensusKey)
+	endpoint := "fixture:" + dataset.ID + ":" + filepath.Base(fixturePath)
+	return fmcsa.RawResponse{
+		Endpoint: endpoint,
+		Body:     rowBody,
+		Fetch:    fixtureFetch(socrata.SourceName, dataset.ResourceURL, fixturePath, rowBody),
+	}, true, nil
+}
+
+func socrataFixtureRows(body []byte) ([]map[string]any, bool, error) {
+	var rows []map[string]any
+	if err := json.Unmarshal(body, &rows); err == nil {
+		return rows, hasSocrataCompanyCensusRow(rows), nil
+	}
+	var single map[string]any
+	if err := json.Unmarshal(body, &single); err != nil {
+		return nil, false, err
+	}
+	if isSocrataCompanyCensusRow(single) {
+		return []map[string]any{single}, true, nil
+	}
+	for _, key := range []string{"data", "rows", "results"} {
+		nested, ok := single[key].([]any)
+		if !ok {
+			continue
+		}
+		rows = rows[:0]
+		for _, item := range nested {
+			row, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			rows = append(rows, row)
+		}
+		if hasSocrataCompanyCensusRow(rows) {
+			return rows, true, nil
+		}
+	}
+	return nil, false, nil
+}
+
+func hasSocrataCompanyCensusRow(rows []map[string]any) bool {
+	for _, row := range rows {
+		if isSocrataCompanyCensusRow(row) {
+			return true
+		}
+	}
+	return false
+}
+
+func isSocrataCompanyCensusRow(row map[string]any) bool {
+	return firstFixtureString(row, "dotNumber", "usdotNumber", "usdotNo", "usdotNum", "usdot", "dot") != "" &&
+		firstFixtureString(row, "legalName", "carrierName", "dbaName", "dba") != ""
+}
+
+func matchSocrataFixtureRow(req domain.LookupRequest, rows []map[string]any) (map[string]any, bool) {
+	if len(rows) == 1 {
+		return rows[0], true
+	}
+	for _, row := range rows {
+		if socrataRowMatchesIdentifier(req, row) {
+			return row, true
+		}
+	}
+	return nil, false
+}
+
+func socrataRowMatchesIdentifier(req domain.LookupRequest, row map[string]any) bool {
+	switch req.IdentifierType {
+	case "dot":
+		return fixtureDigitsOnly(firstFixtureString(row, "dotNumber", "usdotNumber", "usdotNo", "usdotNum", "usdot", "dot")) == req.IdentifierValue
+	case "mc", "mx", "ff":
+		wantType := strings.ToUpper(req.IdentifierType)
+		prefix := strings.ToUpper(firstFixtureString(row, "prefix", "docketPrefix", "docketType"))
+		for _, value := range fixtureStrings(row, "docketNumber", "docketNbr", "docket", "docketNo", "mcNumber", "mxNumber", "ffNumber") {
+			if fixtureDigitsOnly(value) != req.IdentifierValue {
+				continue
+			}
+			valuePrefix := prefix
+			upper := strings.ToUpper(strings.TrimSpace(value))
+			if valuePrefix == "" && (strings.HasPrefix(upper, "MC") || strings.HasPrefix(upper, "MX") || strings.HasPrefix(upper, "FF")) {
+				valuePrefix = upper[:2]
+			}
+			return valuePrefix == "" || valuePrefix == wantType || strings.HasPrefix(upper, wantType)
+		}
+	case "name":
+		want := normalize.ComparableString(req.IdentifierValue)
+		for _, value := range fixtureStrings(row, "legalName", "carrierName", "dbaName", "dba") {
+			if normalize.ComparableString(value) == want {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func fixtureFetch(sourceName, endpoint, fixturePath string, body []byte) domain.SourceFetchResult {
+	return domain.SourceFetchResult{
+		SourceName:         sourceName,
+		Endpoint:           endpoint,
+		RequestMethod:      "GET",
+		RequestURLRedacted: fixturePath,
+		FetchedAt:          time.Now().UTC().Format(time.RFC3339),
+		ResponseHash:       normalize.HashRaw(body),
+	}
+}
+
+func fixtureStrings(row map[string]any, keys ...string) []string {
+	wanted := map[string]bool{}
+	for _, key := range keys {
+		wanted[normalizeFixtureKey(key)] = true
+	}
+	var out []string
+	for key, value := range row {
+		if !wanted[normalizeFixtureKey(key)] {
+			continue
+		}
+		if s := fixtureScalarString(value); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+func firstFixtureString(row map[string]any, keys ...string) string {
+	for _, value := range fixtureStrings(row, keys...) {
+		return value
+	}
+	return ""
+}
+
+func fixtureScalarString(value any) string {
+	switch v := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return strings.TrimSpace(v)
+	case float64, float32, int, int64, int32, uint, uint64, uint32, bool:
+		return strings.TrimSpace(fmt.Sprint(v))
+	default:
+		return ""
+	}
+}
+
+func normalizeFixtureKey(s string) string {
+	s = strings.ToLower(s)
+	replacer := strings.NewReplacer("_", "", "-", "", " ", "")
+	return replacer.Replace(s)
+}
+
+func fixtureDigitsOnly(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if r >= '0' && r <= '9' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 func (a *App) lookupOffline(ctx context.Context, req domain.LookupRequest) (domain.LookupResult, error) {
