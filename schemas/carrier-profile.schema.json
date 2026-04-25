@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openhaulguard.org/schemas/carrier-profile.schema.json",
+  "title": "OpenHaul Guard Carrier Profile",
+  "type": "object",
+  "required": ["usdot_number"],
+  "properties": {
+    "usdot_number": {"type": "string"},
+    "legal_name": {"type": "string"},
+    "dba_name": {"type": "string"},
+    "identifiers": {"type": "array"},
+    "physical_address": {"type": "object"},
+    "mailing_address": {"type": "object"},
+    "contact": {"type": "object"},
+    "operations": {"type": "object"},
+    "authority": {"type": "array"},
+    "insurance": {"type": "array"},
+    "safety": {"type": "object"}
+  }
+}

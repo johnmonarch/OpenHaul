@@ -1,0 +1,7 @@
+Carrier Packet
+
+Legal Name: Example Trucking LLC
+USDOT: 1234567
+MC: 123456
+Phone: (555) 555-5555
+Email: dispatch@exampletrucking.test

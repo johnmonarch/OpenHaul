@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openhaulguard.org/schemas/lookup-result.schema.json",
+  "title": "OpenHaul Guard Lookup Result",
+  "type": "object",
+  "required": ["schema_version", "report_type", "generated_at", "lookup", "carrier", "freshness", "risk_assessment", "sources", "disclaimer"],
+  "properties": {
+    "schema_version": {"type": "string"},
+    "report_type": {"const": "carrier_lookup_report"},
+    "generated_at": {"type": "string"},
+    "lookup": {"type": "object"},
+    "carrier": {"type": "object"},
+    "freshness": {"type": "object"},
+    "risk_assessment": {"type": "object"},
+    "sources": {"type": "array"},
+    "warnings": {"type": "array"},
+    "disclaimer": {"type": "string"}
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openhaulguard.org/schemas/risk-assessment.schema.json",
+  "title": "OpenHaul Guard Risk Assessment",
+  "type": "object",
+  "required": ["score", "recommendation", "flags"],
+  "properties": {
+    "score": {"type": "integer", "minimum": 0, "maximum": 100},
+    "recommendation": {
+      "type": "string",
+      "enum": ["no_obvious_issue", "monitor", "manual_review_recommended", "high_priority_manual_review", "insufficient_data"]
+    },
+    "flags": {"type": "array"}
+  }
+}

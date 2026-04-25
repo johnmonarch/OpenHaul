@@ -1,0 +1,8 @@
+.DS_Store
+ohg
+*.db
+*.db-shm
+*.db-wal
+dist/
+coverage.out
+.openhaulguard/

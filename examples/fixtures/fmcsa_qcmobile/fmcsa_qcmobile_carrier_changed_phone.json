@@ -1,0 +1,22 @@
+{
+  "content": {
+    "carrier": {
+      "dotNumber": "1234567",
+      "legalName": "EXAMPLE TRUCKING LLC",
+      "dbaName": "EXAMPLE HAUL",
+      "phyStreet": "100 Main Street",
+      "phyCity": "Memphis",
+      "phyState": "TN",
+      "phyZipcode": "38103",
+      "telephone": "(555) 501-0123",
+      "email": "dispatch@exampletrucking.test",
+      "powerUnits": 12,
+      "drivers": 14,
+      "mcs150Date": "2026-03-15",
+      "docketNumber": "123456",
+      "authorityStatus": "ACTIVE",
+      "authorityType": "COMMON",
+      "originalActionDate": "2026-04-01"
+    }
+  }
+}
