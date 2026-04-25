@@ -62,9 +62,11 @@ func rootCommand(g *globals) *cobra.Command {
 	root.PersistentFlags().BoolVar(&g.noColor, "no-color", false, "Disable terminal colors")
 	root.PersistentFlags().BoolVar(&g.yes, "yes", false, "Accept safe defaults in prompts")
 	root.AddCommand(setupCommand(g))
+	root.AddCommand(initCommand(g))
 	root.AddCommand(doctorCommand(g))
 	root.AddCommand(carrierCommand(g))
 	root.AddCommand(watchCommand(g))
+	root.AddCommand(mirrorCommand(g))
 	root.AddCommand(configCommand(g))
 	root.AddCommand(mcpCommand(g))
 	root.AddCommand(packetCommand(g))
@@ -84,37 +86,8 @@ func setupCommand(g *globals) *cobra.Command {
 		Use:   "setup",
 		Short: "Set up local OpenHaul Guard config and credentials",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := cmd.Context()
-			a, err := newApp(ctx, g, false)
-			if err != nil {
-				return err
-			}
-			defer a.Close()
 			if len(args) == 0 || quick || g.yes {
-				if err := a.SetupQuick(ctx); err != nil {
-					return err
-				}
-				if g.format == "json" {
-					return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{
-						"status":    "ok",
-						"home":      a.Config.Home,
-						"db_path":   a.Config.DBPath,
-						"next_step": "ohg carrier lookup --mc 123456",
-					})
-				}
-				fmt.Fprintln(cmd.OutOrStdout(), "Welcome to OpenHaul Guard.")
-				fmt.Fprintln(cmd.OutOrStdout(), "")
-				fmt.Fprintln(cmd.OutOrStdout(), "[1/4] Creating local directories... done")
-				fmt.Fprintln(cmd.OutOrStdout(), "[2/4] Creating config file... done")
-				fmt.Fprintln(cmd.OutOrStdout(), "[3/4] Creating local database... done")
-				fmt.Fprintln(cmd.OutOrStdout(), "[4/4] Running quick setup... done")
-				fmt.Fprintln(cmd.OutOrStdout(), "")
-				fmt.Fprintln(cmd.OutOrStdout(), "You can now try:")
-				fmt.Fprintln(cmd.OutOrStdout(), "  ohg carrier lookup --mc 123456 --fixture examples/fixtures/fmcsa_qcmobile/fmcsa_qcmobile_carrier_valid.json")
-				fmt.Fprintln(cmd.OutOrStdout(), "")
-				fmt.Fprintln(cmd.OutOrStdout(), "For fresher live lookups later, run:")
-				fmt.Fprintln(cmd.OutOrStdout(), "  ohg setup fmcsa")
-				return nil
+				return runLocalSetup(cmd, g, "setup")
 			}
 			return cmd.Help()
 		},
@@ -163,6 +136,72 @@ func setupCommand(g *globals) *cobra.Command {
 	_ = socrataCmd.Flags().MarkHidden("token")
 	cmd.AddCommand(fmcsaCmd, socrataCmd)
 	return cmd
+}
+
+func initCommand(g *globals) *cobra.Command {
+	return &cobra.Command{
+		Use:   "init",
+		Short: "Quickly prepare local OpenHaul Guard storage",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runLocalSetup(cmd, g, "init")
+		},
+	}
+}
+
+func runLocalSetup(cmd *cobra.Command, g *globals, commandName string) error {
+	ctx := cmd.Context()
+	a, err := newApp(ctx, g, true)
+	if err != nil {
+		return err
+	}
+	defer a.Close()
+	before := a.SetupProgress(ctx)
+	if err := a.SetupQuick(ctx); err != nil {
+		return err
+	}
+	if commandName == "setup" {
+		a.MarkDefaultSetupComplete(ctx)
+	}
+	after := a.SetupProgress(ctx)
+	resumed := before.ConfigWritten || before.DatabaseInitialized || before.QuickSetupComplete || before.DefaultSetupComplete
+	if g.format == "json" {
+		return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{
+			"status":     "ok",
+			"command":    commandName,
+			"home":       a.Config.Home,
+			"config":     a.Config.Path,
+			"db_path":    a.Config.DBPath,
+			"resumed":    resumed,
+			"progress":   after,
+			"next_step":  "ohg carrier lookup --mc 123456",
+			"live_setup": "ohg setup fmcsa",
+		})
+	}
+	out := cmd.OutOrStdout()
+	if commandName == "init" {
+		fmt.Fprintln(out, "OpenHaul Guard is initialized.")
+	} else {
+		fmt.Fprintln(out, "Welcome to OpenHaul Guard.")
+	}
+	fmt.Fprintln(out, "")
+	fmt.Fprintln(out, "This prepares a private OpenHaul Guard folder on this computer.")
+	fmt.Fprintln(out, "No government API key is required for this first step.")
+	fmt.Fprintln(out, "")
+	if resumed {
+		fmt.Fprintln(out, "Found earlier setup progress, so I picked up from there.")
+		fmt.Fprintln(out, "")
+	}
+	fmt.Fprintf(out, "[1/4] Home folder ready: %s\n", a.Config.Home)
+	fmt.Fprintf(out, "[2/4] Config file ready: %s\n", a.Config.Path)
+	fmt.Fprintf(out, "[3/4] Local database ready: %s\n", a.Config.DBPath)
+	fmt.Fprintln(out, "[4/4] Setup state saved: done")
+	fmt.Fprintln(out, "")
+	fmt.Fprintln(out, "You can now try a lookup with a sample file:")
+	fmt.Fprintln(out, "  ohg carrier lookup --mc 123456 --fixture examples/fixtures/fmcsa_qcmobile/fmcsa_qcmobile_carrier_valid.json")
+	fmt.Fprintln(out, "")
+	fmt.Fprintln(out, "When you want live FMCSA lookups, run:")
+	fmt.Fprintln(out, "  ohg setup fmcsa")
+	return nil
 }
 
 func doctorCommand(g *globals) *cobra.Command {
@@ -317,7 +356,7 @@ func carrierDiffCommand(g *globals) *cobra.Command {
 
 func watchCommand(g *globals) *cobra.Command {
 	cmd := &cobra.Command{Use: "watch", Short: "Manage and sync watched carriers"}
-	cmd.AddCommand(watchAddCommand(g), watchListCommand(g), watchSyncCommand(g))
+	cmd.AddCommand(watchAddCommand(g), watchRemoveCommand(g), watchListCommand(g), watchSyncCommand(g), watchReportCommand(g))
 	return cmd
 }
 
@@ -347,6 +386,48 @@ func watchAddCommand(g *globals) *cobra.Command {
 	cmd.Flags().StringVar(&mc, "mc", "", "Motor Carrier docket number")
 	cmd.Flags().StringVar(&dot, "dot", "", "USDOT number")
 	cmd.Flags().StringVar(&label, "label", "", "Optional watchlist label")
+	return cmd
+}
+
+func watchRemoveCommand(g *globals) *cobra.Command {
+	var mc, dot string
+	cmd := &cobra.Command{
+		Use:   "remove",
+		Short: "Remove a carrier from the local watchlist",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			typ, value, err := exactlyOneIdentifier(map[string]string{"mc": mc, "dot": dot})
+			if err != nil {
+				return err
+			}
+			ctx := cmd.Context()
+			a, err := newApp(ctx, g, true)
+			if err != nil {
+				return err
+			}
+			defer a.Close()
+			removed, err := a.WatchRemove(ctx, typ, value)
+			if err != nil {
+				return err
+			}
+			if g.format == "json" {
+				enc := json.NewEncoder(cmd.OutOrStdout())
+				enc.SetIndent("", "  ")
+				return enc.Encode(map[string]any{
+					"removed":          removed,
+					"identifier_type":  typ,
+					"identifier_value": value,
+				})
+			}
+			if removed {
+				fmt.Fprintf(cmd.OutOrStdout(), "Removed %s %s from watchlist.\n", strings.ToUpper(typ), value)
+			} else {
+				fmt.Fprintf(cmd.OutOrStdout(), "%s %s was not active on the watchlist.\n", strings.ToUpper(typ), value)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&mc, "mc", "", "Motor Carrier docket number")
+	cmd.Flags().StringVar(&dot, "dot", "", "USDOT number")
 	return cmd
 }
 
@@ -410,6 +491,91 @@ func watchSyncCommand(g *globals) *cobra.Command {
 	cmd.Flags().StringVar(&fixture, "fixture", "", "Hidden test fixture path")
 	cmd.Flags().BoolVar(&force, "force-refresh", false, "Force live refresh")
 	_ = cmd.Flags().MarkHidden("fixture")
+	return cmd
+}
+
+func watchReportCommand(g *globals) *cobra.Command {
+	var since, label string
+	cmd := &cobra.Command{
+		Use:   "report",
+		Short: "Report changes for watched carriers",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			a, err := newApp(ctx, g, true)
+			if err != nil {
+				return err
+			}
+			defer a.Close()
+			result, err := a.WatchReport(ctx, since, label)
+			if err != nil {
+				return err
+			}
+			return report.WriteWatch(cmd.OutOrStdout(), result, g.format)
+		},
+	}
+	cmd.Flags().StringVar(&since, "since", "24h", "Duration or YYYY-MM-DD start date")
+	cmd.Flags().StringVar(&label, "label", "", "Only include watched carriers with matching label text")
+	return cmd
+}
+
+func mirrorCommand(g *globals) *cobra.Command {
+	cmd := &cobra.Command{Use: "mirror", Short: "Manage local bootstrap mirror data"}
+	cmd.AddCommand(&cobra.Command{
+		Use:   "status",
+		Short: "Show local bootstrap mirror status",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			a, err := newApp(ctx, g, true)
+			if err != nil {
+				return err
+			}
+			defer a.Close()
+			status := a.MirrorStatus()
+			if g.format == "json" {
+				enc := json.NewEncoder(cmd.OutOrStdout())
+				enc.SetIndent("", "  ")
+				return enc.Encode(status)
+			}
+			if status.Available {
+				fmt.Fprintf(cmd.OutOrStdout(), "Bootstrap mirror: OK\nPath: %s\nCarriers: %d\nGenerated: %s\n", status.Path, status.CarrierCount, status.GeneratedAt)
+				if status.SourceTimestamp != "" {
+					fmt.Fprintf(cmd.OutOrStdout(), "Source timestamp: %s\n", status.SourceTimestamp)
+				}
+				return nil
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Bootstrap mirror: not imported\nPath: %s\n", status.Path)
+			if status.Error != "" {
+				fmt.Fprintf(cmd.OutOrStdout(), "Reason: %s\n", status.Error)
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), "Import one with:")
+			fmt.Fprintln(cmd.OutOrStdout(), "  ohg mirror import <path>")
+			return nil
+		},
+	})
+	cmd.AddCommand(&cobra.Command{
+		Use:   "import <path>",
+		Args:  cobra.ExactArgs(1),
+		Short: "Import a local JSON bootstrap mirror",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			a, err := newApp(ctx, g, true)
+			if err != nil {
+				return err
+			}
+			defer a.Close()
+			status, err := a.MirrorImport(ctx, args[0])
+			if err != nil {
+				return err
+			}
+			if g.format == "json" {
+				enc := json.NewEncoder(cmd.OutOrStdout())
+				enc.SetIndent("", "  ")
+				return enc.Encode(status)
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Imported bootstrap mirror: %d carriers\nPath: %s\n", status.CarrierCount, status.Path)
+			return nil
+		},
+	})
 	return cmd
 }
 
@@ -514,6 +680,18 @@ func packetCommand(g *globals) *cobra.Command {
 	cmd := &cobra.Command{Use: "packet", Short: "Carrier packet tools"}
 	var mc, dot string
 	var fixture string
+	extractCmd := &cobra.Command{
+		Use:   "extract <path>",
+		Args:  cobra.ExactArgs(1),
+		Short: "Extract structured fields from a carrier packet",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			result, err := packet.ExtractReport(cmd.Context(), args[0])
+			if err != nil {
+				return err
+			}
+			return packet.WriteExtract(cmd.OutOrStdout(), result, g.format)
+		},
+	}
 	checkCmd := &cobra.Command{
 		Use:   "check <path>",
 		Args:  cobra.ExactArgs(1),
@@ -549,7 +727,7 @@ func packetCommand(g *globals) *cobra.Command {
 	checkCmd.Flags().StringVar(&dot, "dot", "", "USDOT number")
 	checkCmd.Flags().StringVar(&fixture, "fixture", "", "Hidden test fixture path")
 	_ = checkCmd.Flags().MarkHidden("fixture")
-	cmd.AddCommand(checkCmd)
+	cmd.AddCommand(extractCmd, checkCmd)
 	return cmd
 }
 
@@ -585,6 +763,12 @@ func getConfigValue(cfg config.Config, key string) (string, error) {
 		return cfg.MCP.Host, nil
 	case "privacy.telemetry":
 		return fmt.Sprint(cfg.Privacy.Telemetry), nil
+	case "sources.mirror.enabled":
+		return fmt.Sprint(cfg.Sources.Mirror.Enabled), nil
+	case "sources.mirror.local_path":
+		return cfg.Sources.Mirror.LocalPath, nil
+	case "sources.mirror.url":
+		return cfg.Sources.Mirror.URL, nil
 	default:
 		return "", apperrors.New(apperrors.CodeInvalidArgs, "unknown config key", "")
 	}
@@ -604,6 +788,12 @@ func setConfigValue(cfg *config.Config, key, value string) error {
 		cfg.MCP.Host = value
 	case "privacy.telemetry":
 		cfg.Privacy.Telemetry = value == "true"
+	case "sources.mirror.enabled":
+		cfg.Sources.Mirror.Enabled = value == "true"
+	case "sources.mirror.local_path":
+		cfg.Sources.Mirror.LocalPath = value
+	case "sources.mirror.url":
+		cfg.Sources.Mirror.URL = value
 	default:
 		return apperrors.New(apperrors.CodeInvalidArgs, "unknown config key", "")
 	}

@@ -88,11 +88,17 @@ install -m 0755 ohg "$HOME/.local/bin/ohg"
 ## First Run
 
 ```bash
-ohg setup --quick --yes
+ohg setup
 ohg doctor
 ```
 
-Quick setup creates the local OpenHaul Guard home directory, config file, SQLite database, raw payload directory, reports directory, and logs directory. It does not configure live government API credentials.
+Guided setup creates the local OpenHaul Guard home directory, config file, SQLite database, raw payload directory, reports directory, and logs directory. It saves setup progress locally, so rerunning `ohg setup` can continue safely. It does not configure live government API credentials.
+
+For scripts or a fast local bootstrap, use:
+
+```bash
+ohg init
+```
 
 ## Live FMCSA Lookup
 

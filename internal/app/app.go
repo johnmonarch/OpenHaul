@@ -21,6 +21,7 @@ import (
 	"github.com/openhaulguard/openhaulguard/internal/normalize"
 	"github.com/openhaulguard/openhaulguard/internal/scoring"
 	"github.com/openhaulguard/openhaulguard/internal/sources/fmcsa"
+	"github.com/openhaulguard/openhaulguard/internal/sources/mirror"
 	"github.com/openhaulguard/openhaulguard/internal/sources/registry"
 	"github.com/openhaulguard/openhaulguard/internal/sources/socrata"
 	"github.com/openhaulguard/openhaulguard/internal/store"
@@ -47,6 +48,13 @@ type DoctorResult struct {
 	Status        string        `json:"status"`
 	Checks        []DoctorCheck `json:"checks"`
 	NextStep      string        `json:"next_step"`
+}
+
+type SetupProgress struct {
+	ConfigWritten        bool `json:"config_written"`
+	DatabaseInitialized  bool `json:"database_initialized"`
+	QuickSetupComplete   bool `json:"quick_setup_complete"`
+	DefaultSetupComplete bool `json:"default_setup_complete"`
 }
 
 type Options struct {
@@ -102,9 +110,33 @@ func (a *App) SetupQuick(ctx context.Context) error {
 	if err := a.Store.Migrate(ctx); err != nil {
 		return err
 	}
+	_ = a.Store.SetSetupState(ctx, "config_written", true)
 	_ = a.Store.SetSetupState(ctx, "database_initialized", true)
 	_ = a.Store.SetSetupState(ctx, "quick_setup_complete", true)
 	return nil
+}
+
+func (a *App) SetupProgress(ctx context.Context) SetupProgress {
+	if a.Store == nil {
+		return SetupProgress{}
+	}
+	progress := SetupProgress{}
+	readBool := func(key string) bool {
+		var value bool
+		ok, err := a.Store.GetSetupState(ctx, key, &value)
+		return err == nil && ok && value
+	}
+	progress.ConfigWritten = readBool("config_written")
+	progress.DatabaseInitialized = readBool("database_initialized")
+	progress.QuickSetupComplete = readBool("quick_setup_complete")
+	progress.DefaultSetupComplete = readBool("default_setup_complete")
+	return progress
+}
+
+func (a *App) MarkDefaultSetupComplete(ctx context.Context) {
+	if a.Store != nil {
+		_ = a.Store.SetSetupState(ctx, "default_setup_complete", true)
+	}
 }
 
 func (a *App) SetupCredential(ctx context.Context, kind string, noBrowser bool, provided string) error {
@@ -202,6 +234,12 @@ func (a *App) Doctor(ctx context.Context) DoctorResult {
 	} else {
 		add("FMCSA WebKey", "warn", "missing, live FMCSA lookup will not work", "ohg setup fmcsa")
 	}
+	mirrorStatus := mirror.Inspect(a.Config.Sources.Mirror.LocalPath)
+	if mirrorStatus.Available {
+		add("Bootstrap mirror", "ok", fmt.Sprintf("%d carriers, generated %s", mirrorStatus.CarrierCount, mirrorStatus.GeneratedAt), "")
+	} else if a.Config.Sources.Mirror.Enabled {
+		add("Bootstrap mirror", "warn", "not imported; no-key fresh lookups will be limited", "ohg mirror import <path>")
+	}
 	if _, err := a.Creds.Get(credentials.UserSocrataAppToken); err == nil {
 		add("Socrata app token", "ok", "credential present", "")
 	} else {
@@ -244,6 +282,14 @@ func (a *App) Lookup(ctx context.Context, req domain.LookupRequest) (domain.Look
 				Code:    "OHG_AUTH_FMCSA_MISSING",
 				Message: "Live FMCSA lookup needs a free FMCSA WebKey, so this report uses local cache.",
 				Action:  "Run: ohg setup fmcsa",
+			})
+			return result, nil
+		}
+		if result, ok := a.lookupMirror(ctx, req); ok {
+			result.Warnings = append(result.Warnings, domain.UserWarning{
+				Code:    "OHG_MIRROR_MODE",
+				Message: "This report uses a local bootstrap mirror, not a live FMCSA lookup.",
+				Action:  "Run: ohg setup fmcsa for live current-state lookup.",
 			})
 			return result, nil
 		}
@@ -506,6 +552,33 @@ func (a *App) lookupFreshCache(ctx context.Context, req domain.LookupRequest) (d
 	return buildLookupResult(req, carrier, assessment, nil, "cache", obs.ObservedAt), true
 }
 
+func (a *App) lookupMirror(ctx context.Context, req domain.LookupRequest) (domain.LookupResult, bool) {
+	if !a.Config.Sources.Mirror.Enabled || strings.TrimSpace(a.Config.Sources.Mirror.LocalPath) == "" {
+		return domain.LookupResult{}, false
+	}
+	now := time.Now().UTC()
+	carrier, fetch, ok, err := mirror.Lookup(ctx, a.Config.Sources.Mirror.LocalPath, req.IdentifierType, req.IdentifierValue, now)
+	if err != nil || !ok {
+		return domain.LookupResult{}, false
+	}
+	if previous, _, err := a.Store.LatestCarrierByUSDOT(ctx, carrier.USDOTNumber); err == nil && previous.LocalFirstSeenAt != "" {
+		carrier.LocalFirstSeenAt = previous.LocalFirstSeenAt
+	}
+	count, _ := a.Store.ObservationCount(ctx, carrier.USDOTNumber)
+	assessment := scoring.Assess(carrier, scoring.Context{ObservationCount: count + 1, ObservedAt: now})
+	result := buildLookupResult(req, carrier, assessment, []domain.SourceFetchResult{fetch}, "mirror", now.Format(time.RFC3339))
+	rawBody, _ := json.Marshal(carrier)
+	persisted, err := a.persistPreparedResult(ctx, req, result, "mirror", []fmcsa.RawResponse{{
+		Endpoint: fetch.Endpoint,
+		Body:     rawBody,
+		Fetch:    fetch,
+	}})
+	if err != nil {
+		return domain.LookupResult{}, false
+	}
+	return persisted, true
+}
+
 func (a *App) resultFromRaw(ctx context.Context, req domain.LookupRequest, raws []fmcsa.RawResponse, mode string) (domain.LookupResult, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	carrier, err := normalize.FMCSAResponsesToCarrier(req.IdentifierType, req.IdentifierValue, raws, now)
@@ -637,6 +710,11 @@ func (a *App) Diff(ctx context.Context, typ, value, since string, strict bool) (
 	if err := json.Unmarshal([]byte(observations[len(observations)-1].NormalizedJSON), &current); err != nil {
 		return result, err
 	}
+	result.Changes = carrierFieldDiffs(previous, current, observations[0].ObservedAt, observations[len(observations)-1].ObservedAt, strict)
+	return result, nil
+}
+
+func carrierFieldDiffs(previous, current domain.CarrierProfile, previousObservedAt, currentObservedAt string, strict bool) []domain.FieldDiff {
 	fields := map[string][2]string{
 		"legal_name":       {previous.LegalName, current.LegalName},
 		"dba_name":         {previous.DBAName, current.DBAName},
@@ -649,6 +727,7 @@ func (a *App) Diff(ctx context.Context, typ, value, since string, strict bool) (
 		"drivers":          {strconv.Itoa(previous.Operations.Drivers), strconv.Itoa(current.Operations.Drivers)},
 	}
 	keys := []string{"legal_name", "dba_name", "physical_address", "mailing_address", "phone", "email", "authority.status", "power_units", "drivers"}
+	var changes []domain.FieldDiff
 	for _, key := range keys {
 		values := fields[key]
 		left, right := values[0], values[1]
@@ -658,17 +737,17 @@ func (a *App) Diff(ctx context.Context, typ, value, since string, strict bool) (
 			compareRight = normalize.ComparableString(right)
 		}
 		if compareLeft != compareRight {
-			result.Changes = append(result.Changes, domain.FieldDiff{
+			changes = append(changes, domain.FieldDiff{
 				FieldPath:          key,
 				PreviousValue:      left,
 				CurrentValue:       right,
-				PreviousObservedAt: observations[0].ObservedAt,
-				CurrentObservedAt:  observations[len(observations)-1].ObservedAt,
+				PreviousObservedAt: previousObservedAt,
+				CurrentObservedAt:  currentObservedAt,
 				Material:           true,
 			})
 		}
 	}
-	return result, nil
+	return changes
 }
 
 func (a *App) WatchAdd(ctx context.Context, typ, value, label string) error {
@@ -719,6 +798,30 @@ func (a *App) WatchSync(ctx context.Context, fixture string, force bool) (WatchS
 		_ = a.Store.MarkWatchSynced(ctx, item.ID, result.Carrier.USDOTNumber)
 	}
 	return out, nil
+}
+
+func (a *App) MirrorImport(ctx context.Context, path string) (mirror.Status, error) {
+	index, body, err := mirror.Load(path)
+	if err != nil {
+		return mirror.Status{}, err
+	}
+	if len(index.Carriers) == 0 {
+		return mirror.Status{}, apperrors.New(apperrors.CodeInvalidArgs, "mirror file did not contain any carriers", "")
+	}
+	if err := os.MkdirAll(filepath.Dir(a.Config.Sources.Mirror.LocalPath), 0o755); err != nil {
+		return mirror.Status{}, err
+	}
+	if err := os.WriteFile(a.Config.Sources.Mirror.LocalPath, body, 0o600); err != nil {
+		return mirror.Status{}, err
+	}
+	if a.Store != nil {
+		_ = a.Store.SetSetupState(ctx, "mirror_bootstrap_complete", true)
+	}
+	return mirror.Inspect(a.Config.Sources.Mirror.LocalPath), nil
+}
+
+func (a *App) MirrorStatus() mirror.Status {
+	return mirror.Inspect(a.Config.Sources.Mirror.LocalPath)
 }
 
 func fetches(raws []fmcsa.RawResponse) []domain.SourceFetchResult {

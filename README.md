@@ -11,10 +11,11 @@ This repository contains the first Go CLI implementation:
 - Local setup, config, SQLite storage, and doctor checks
 - FMCSA QCMobile live lookup with a user-provided WebKey
 - Local cache and offline lookup after a carrier has been observed
+- Local JSON bootstrap mirror import and no-key mirror lookup fallback
 - Carrier lookup reports in table, JSON, or Markdown
 - Local carrier diffs across stored observations
-- Watchlist add, list, and sync
-- Text/PDF carrier packet checks against lookup results
+- Watchlist add, remove, list, sync, and reports
+- Text/PDF carrier packet extraction and checks against lookup results
 - Developer-preview MCP JSON-RPC server over stdio
 
 ## Quick Start
@@ -35,9 +36,11 @@ brew install ohg
 Initialize local config and storage:
 
 ```bash
-ohg setup --quick --yes
+ohg setup
 ohg doctor
 ```
+
+`ohg setup` is guided and resumable. For a fast local bootstrap in scripts, run `ohg init`.
 
 Build from source for development:
 
@@ -61,11 +64,25 @@ If you built locally and did not install the binary, use `./ohg`:
   --format markdown
 ```
 
+Import a local bootstrap mirror for no-key lookup fallback:
+
+```bash
+ohg mirror import examples/fixtures/mirror/carriers.json
+ohg carrier lookup --mc 123456 --format json
+```
+
 Live FMCSA lookup requires a free FMCSA WebKey:
 
 ```bash
 ./ohg setup fmcsa
 ./ohg carrier lookup --mc 123456 --format json
+```
+
+Extract fields from a text carrier packet:
+
+```bash
+./ohg packet extract examples/fixtures/packets/basic_carrier_packet.txt \
+  --format json
 ```
 
 Check a text carrier packet against a lookup result:

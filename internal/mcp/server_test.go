@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -24,8 +25,8 @@ func TestToolsList(t *testing.T) {
 	responses := responsesFrom(t, out)
 	result := responses[0]["result"].(map[string]any)
 	tools := result["tools"].([]any)
-	if len(tools) != 2 {
-		t.Fatalf("expected 2 tools, got %d", len(tools))
+	if len(tools) != 4 {
+		t.Fatalf("expected 4 tools, got %d", len(tools))
 	}
 	names := map[string]bool{}
 	for _, raw := range tools {
@@ -35,7 +36,7 @@ func TestToolsList(t *testing.T) {
 			t.Fatalf("tool %s is missing safety language", tool["name"])
 		}
 	}
-	for _, name := range []string{"carrier_lookup", "carrier_diff"} {
+	for _, name := range []string{"carrier_lookup", "carrier_diff", "packet_extract", "packet_check"} {
 		if !names[name] {
 			t.Fatalf("missing tool %s", name)
 		}
@@ -136,6 +137,89 @@ func TestToolCallCarrierDiff(t *testing.T) {
 	}
 }
 
+func TestToolCallPacketExtract(t *testing.T) {
+	packetPath := writeMCPPacketFixture(t)
+	in := requestBuffer(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      4,
+		"method":  "tools/call",
+		"params": map[string]any{
+			"name": "packet_extract",
+			"arguments": map[string]any{
+				"path": packetPath,
+			},
+		},
+	})
+	out := runServer(t, &fakeService{}, in)
+	response := responsesFrom(t, out)[0]
+	result := response["result"].(map[string]any)
+	structured := result["structuredContent"].(map[string]any)
+	if structured["report_type"] != "packet_extract_report" {
+		t.Fatalf("unexpected structured content: %#v", structured)
+	}
+	extracted := structured["extracted"].(map[string]any)
+	if extracted["legal_name"] != "Example Trucking LLC" || extracted["usdot_number"] != "1234567" {
+		t.Fatalf("unexpected extracted fields: %#v", extracted)
+	}
+}
+
+func TestToolCallPacketCheck(t *testing.T) {
+	packetPath := writeMCPPacketFixture(t)
+	service := &fakeService{
+		lookupResult: domain.LookupResult{
+			SchemaVersion: domain.SchemaVersion,
+			ReportType:    "carrier_lookup_report",
+			Lookup:        domain.LookupInfo{InputType: "mc", InputValue: "123456", ResolvedUSDOT: "1234567", Mode: "offline"},
+			Carrier: domain.CarrierProfile{
+				USDOTNumber: "1234567",
+				LegalName:   "Example Trucking LLC",
+				DBAName:     "Example Haul",
+				Identifiers: []domain.Identifier{{Type: "MC", Value: "123456"}},
+				PhysicalAddress: domain.Address{
+					Line1:      "100 Main Street",
+					City:       "Memphis",
+					State:      "TN",
+					PostalCode: "38103",
+				},
+				Contact: domain.Contact{Phone: "+15555555555", Email: "dispatch@exampletrucking.test"},
+			},
+			Disclaimer: domain.Disclaimer,
+		},
+	}
+	in := requestBuffer(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      5,
+		"method":  "tools/call",
+		"params": map[string]any{
+			"name": "packet_check",
+			"arguments": map[string]any{
+				"path":             packetPath,
+				"identifier_type":  "mc",
+				"identifier_value": "123456",
+				"offline":          true,
+				"max_age":          "1h",
+			},
+		},
+	})
+	out := runServer(t, service, in)
+	if service.lookupReq.IdentifierType != "mc" || service.lookupReq.IdentifierValue != "123456" {
+		t.Fatalf("unexpected lookup request: %#v", service.lookupReq)
+	}
+	if !service.lookupReq.Offline || service.lookupReq.MaxAge != time.Hour {
+		t.Fatalf("lookup options were not forwarded: %#v", service.lookupReq)
+	}
+	response := responsesFrom(t, out)[0]
+	result := response["result"].(map[string]any)
+	structured := result["structuredContent"].(map[string]any)
+	if structured["report_type"] != "packet_check_report" {
+		t.Fatalf("unexpected structured content: %#v", structured)
+	}
+	summary := structured["summary"].(map[string]any)
+	if summary["recommendation"] != "packet_matches_lookup" {
+		t.Fatalf("unexpected packet summary: %#v", summary)
+	}
+}
+
 func TestToolErrorRedactsCause(t *testing.T) {
 	service := &fakeService{
 		lookupErr: apperrors.Wrap(
@@ -166,6 +250,25 @@ func TestToolErrorRedactsCause(t *testing.T) {
 	if result["isError"] != true {
 		t.Fatalf("expected tool error result, got %#v", result)
 	}
+}
+
+func writeMCPPacketFixture(t *testing.T) string {
+	t.Helper()
+	path := t.TempDir() + "/packet.txt"
+	body := `Carrier Packet
+
+Legal Name: Example Trucking LLC
+DBA: Example Haul
+USDOT: 1234567
+MC: 123456
+Address: 100 Main Street, Memphis, TN 38103
+Phone: (555) 555-5555
+Email: dispatch@exampletrucking.test
+`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }
 
 type fakeService struct {

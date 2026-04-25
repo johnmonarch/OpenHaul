@@ -80,6 +80,60 @@ func TestCLIIntegrationLocalFlows(t *testing.T) {
 	if len(watched) != 1 || watched[0].IdentifierType != "mc" || watched[0].IdentifierValue != "123456" || watched[0].Label != "primary lane" {
 		t.Fatalf("watch list = %#v", watched)
 	}
+	reportOut, _, err := runCLI(t, "--home", home, "--format", "json", "watch", "report", "--since", "100000h", "--label", "primary")
+	if err != nil {
+		t.Fatalf("watch report failed: %v", err)
+	}
+	var watchReport struct {
+		Total   int `json:"total"`
+		Changed int `json:"changed"`
+		Items   []struct {
+			IdentifierType  string             `json:"identifier_type"`
+			IdentifierValue string             `json:"identifier_value"`
+			Label           string             `json:"label"`
+			Status          string             `json:"status"`
+			Changes         []domain.FieldDiff `json:"changes"`
+		} `json:"items"`
+	}
+	decodeJSON(t, reportOut, &watchReport)
+	if watchReport.Total != 1 || watchReport.Changed != 1 || len(watchReport.Items) != 1 {
+		t.Fatalf("watch report summary = %#v", watchReport)
+	}
+	if watchReport.Items[0].IdentifierType != "mc" || watchReport.Items[0].IdentifierValue != "123456" || watchReport.Items[0].Label != "primary lane" || watchReport.Items[0].Status != "changed" {
+		t.Fatalf("watch report item = %#v", watchReport.Items[0])
+	}
+	if !hasPhoneDiff(watchReport.Items[0].Changes) {
+		t.Fatalf("watch report changes did not include expected phone change: %#v", watchReport.Items[0].Changes)
+	}
+	removeOut, _, err := runCLI(t, "--home", home, "watch", "remove", "--mc", "123456")
+	if err != nil {
+		t.Fatalf("watch remove failed: %v", err)
+	}
+	if !strings.Contains(removeOut, "Removed MC 123456") {
+		t.Fatalf("watch remove output = %q", removeOut)
+	}
+	listAfterRemoveOut, _, err := runCLI(t, "--home", home, "--format", "json", "watch", "list")
+	if err != nil {
+		t.Fatalf("watch list after remove failed: %v", err)
+	}
+	watched = nil
+	decodeJSON(t, listAfterRemoveOut, &watched)
+	if len(watched) != 0 {
+		t.Fatalf("watch list after remove = %#v", watched)
+	}
+
+	extractOut, _, err := runCLI(t, "--home", home, "--format", "json", "packet", "extract", packetFixture)
+	if err != nil {
+		t.Fatalf("packet extract failed: %v", err)
+	}
+	var extractResult packet.ExtractResult
+	decodeJSON(t, extractOut, &extractResult)
+	if extractResult.ReportType != "packet_extract_report" {
+		t.Fatalf("packet extract report type = %q", extractResult.ReportType)
+	}
+	if extractResult.Extracted.LegalName != "Example Trucking LLC" || extractResult.Extracted.USDOTNumber != "1234567" {
+		t.Fatalf("unexpected packet extract fields: %#v", extractResult.Extracted)
+	}
 
 	packetOut, _, err := runCLI(t, "--home", home, "--format", "json", "packet", "check", packetFixture, "--mc", "123456", "--fixture", validFixture)
 	if err != nil {
@@ -95,6 +149,80 @@ func TestCLIIntegrationLocalFlows(t *testing.T) {
 	}
 	if packetResult.Extracted.LegalName != "Example Trucking LLC" || packetResult.Extracted.USDOTNumber != "1234567" {
 		t.Fatalf("unexpected extracted packet fields: %#v", packetResult.Extracted)
+	}
+}
+
+func TestSetupDefaultAndInitAlias(t *testing.T) {
+	home := t.TempDir()
+
+	setupOut, _, err := runCLI(t, "--home", home, "setup")
+	if err != nil {
+		t.Fatalf("default setup failed: %v", err)
+	}
+	if !strings.Contains(setupOut, "private OpenHaul Guard folder") {
+		t.Fatalf("setup output did not include guided copy: %q", setupOut)
+	}
+	if !strings.Contains(setupOut, "ohg setup fmcsa") {
+		t.Fatalf("setup output did not include live setup next step: %q", setupOut)
+	}
+
+	resumeOut, _, err := runCLI(t, "--home", home, "setup")
+	if err != nil {
+		t.Fatalf("resumed setup failed: %v", err)
+	}
+	if !strings.Contains(resumeOut, "Found earlier setup progress") {
+		t.Fatalf("setup did not report resumable progress: %q", resumeOut)
+	}
+
+	initHome := t.TempDir()
+	initOut, _, err := runCLI(t, "--home", initHome, "--format", "json", "init")
+	if err != nil {
+		t.Fatalf("init alias failed: %v", err)
+	}
+	var initResult map[string]any
+	decodeJSON(t, initOut, &initResult)
+	if initResult["status"] != "ok" || initResult["command"] != "init" {
+		t.Fatalf("init result = %#v, want ok init", initResult)
+	}
+	progress, ok := initResult["progress"].(map[string]any)
+	if !ok || progress["quick_setup_complete"] != true {
+		t.Fatalf("init progress = %#v, want quick_setup_complete", initResult["progress"])
+	}
+}
+
+func TestMirrorImportAndLookup(t *testing.T) {
+	home := t.TempDir()
+	mirrorFixture := fixturePath(t, "mirror", "carriers.json")
+
+	if _, _, err := runCLI(t, "--home", home, "--format", "json", "setup", "--quick"); err != nil {
+		t.Fatalf("setup failed: %v", err)
+	}
+	importOut, _, err := runCLI(t, "--home", home, "--format", "json", "mirror", "import", mirrorFixture)
+	if err != nil {
+		t.Fatalf("mirror import failed: %v", err)
+	}
+	var status struct {
+		Available    bool `json:"available"`
+		CarrierCount int  `json:"carrier_count"`
+	}
+	decodeJSON(t, importOut, &status)
+	if !status.Available || status.CarrierCount != 1 {
+		t.Fatalf("mirror status after import = %#v", status)
+	}
+	lookupOut, _, err := runCLI(t, "--home", home, "--format", "json", "carrier", "lookup", "--mc", "123456")
+	if err != nil {
+		t.Fatalf("mirror lookup failed: %v", err)
+	}
+	var lookup domain.LookupResult
+	decodeJSON(t, lookupOut, &lookup)
+	if lookup.Lookup.Mode != "mirror" {
+		t.Fatalf("lookup mode = %q, want mirror", lookup.Lookup.Mode)
+	}
+	if lookup.Carrier.USDOTNumber != "1234567" {
+		t.Fatalf("lookup USDOT = %q, want 1234567", lookup.Carrier.USDOTNumber)
+	}
+	if len(lookup.Warnings) == 0 || lookup.Warnings[0].Code != "OHG_MIRROR_MODE" {
+		t.Fatalf("lookup warnings = %#v, want mirror warning", lookup.Warnings)
 	}
 }
 

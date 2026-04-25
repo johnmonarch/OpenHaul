@@ -36,7 +36,7 @@ gofmt -w path/to/file.go
 Use an isolated home directory:
 
 ```bash
-OHG_HOME=/tmp/ohg-dev ./ohg setup --quick --yes
+OHG_HOME=/tmp/ohg-dev ./ohg init
 OHG_HOME=/tmp/ohg-dev ./ohg doctor --format json
 OHG_HOME=/tmp/ohg-dev ./ohg carrier lookup --mc 123456 \
   --fixture examples/fixtures/fmcsa_qcmobile/fmcsa_qcmobile_carrier_valid.json \

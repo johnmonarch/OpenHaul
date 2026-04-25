@@ -78,7 +78,13 @@ Fixture lookups are persisted like other observations and are useful for local v
 
 The repository includes a Socrata client and a registry entry for the DOT DataHub Company Census File (`az4n-8mr2`). The current carrier lookup path still uses FMCSA QCMobile, local cache, or fixtures.
 
-The config model also includes bootstrap mirror settings, but this build does not download or query the mirror.
+The config model includes bootstrap mirror settings. This build supports a local JSON bootstrap mirror imported with:
+
+```bash
+ohg mirror import ./carriers.json
+```
+
+If no FMCSA WebKey is configured and no fresh local cache exists, carrier lookup can fall back to the imported mirror. Mirror reports use `freshness.mode = "mirror"` and include a warning that the result is not a live FMCSA lookup. A hosted public mirror still requires redistribution and attribution review before launch.
 
 ## Freshness and Interpretation
 

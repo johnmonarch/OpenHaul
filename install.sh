@@ -162,7 +162,7 @@ echo "Installed: $INSTALL_DIR/$BIN_NAME"
 "$INSTALL_DIR/$BIN_NAME" --version || true
 echo
 echo "Next step:"
-echo "  $BIN_NAME setup --quick --yes"
+echo "  $BIN_NAME setup"
 echo
 echo "For live FMCSA lookups later:"
 echo "  $BIN_NAME setup fmcsa"

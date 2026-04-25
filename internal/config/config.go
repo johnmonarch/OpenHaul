@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -42,6 +43,7 @@ type MirrorConfig struct {
 	Enabled     bool   `toml:"enabled"`
 	URL         string `toml:"url"`
 	ChecksumURL string `toml:"checksum_url"`
+	LocalPath   string `toml:"local_path"`
 }
 
 type ReportConfig struct {
@@ -106,6 +108,7 @@ func Default(overrides Overrides) (Config, error) {
 				Enabled:     true,
 				URL:         "https://downloads.openhaulguard.org/bootstrap/mc_dot_index.parquet",
 				ChecksumURL: "https://downloads.openhaulguard.org/bootstrap/mc_dot_index.sha256",
+				LocalPath:   filepath.Join(home, "mirror", "carriers.json"),
 			},
 		},
 		Reports: ReportConfig{DefaultFormat: "table"},
@@ -164,11 +167,16 @@ func Load(overrides Overrides) (Config, error) {
 	if cfg.LogDir == "" {
 		cfg.LogDir = filepath.Join(cfg.Home, "logs")
 	}
+	if cfg.Sources.Mirror.LocalPath == "" {
+		cfg.Sources.Mirror.LocalPath = filepath.Join(cfg.Home, "mirror", "carriers.json")
+	} else {
+		cfg.Sources.Mirror.LocalPath = expandHomePath(cfg.Sources.Mirror.LocalPath)
+	}
 	return cfg, nil
 }
 
 func (c Config) EnsureDirs() error {
-	for _, path := range []string{c.Home, filepath.Dir(c.Path), filepath.Dir(c.DBPath), c.RawDir, c.ReportsDir, c.LogDir} {
+	for _, path := range []string{c.Home, filepath.Dir(c.Path), filepath.Dir(c.DBPath), c.RawDir, c.ReportsDir, c.LogDir, filepath.Dir(c.Sources.Mirror.LocalPath)} {
 		if err := os.MkdirAll(path, 0o755); err != nil {
 			return err
 		}
@@ -210,4 +218,18 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func expandHomePath(path string) string {
+	if path != "~" && !strings.HasPrefix(path, "~/") {
+		return path
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return path
+	}
+	if path == "~" {
+		return home
+	}
+	return filepath.Join(home, strings.TrimPrefix(path, "~/"))
 }

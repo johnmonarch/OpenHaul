@@ -15,6 +15,7 @@ import (
 
 	"github.com/openhaulguard/openhaulguard/internal/apperrors"
 	"github.com/openhaulguard/openhaulguard/internal/domain"
+	"github.com/openhaulguard/openhaulguard/internal/packet"
 	"github.com/openhaulguard/openhaulguard/internal/version"
 )
 
@@ -163,6 +164,33 @@ func tools() []tool {
 				"required": []string{"identifier_type", "identifier_value"},
 			},
 		},
+		{
+			Name:        "packet_extract",
+			Description: "Extract structured carrier fields from a text or text-based PDF packet. " + safetyLanguage,
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{"type": "string"},
+				},
+				"required": []string{"path"},
+			},
+		},
+		{
+			Name:        "packet_check",
+			Description: "Compare a carrier packet against a carrier lookup and return packet/source field differences. " + safetyLanguage,
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path":             map[string]any{"type": "string"},
+					"identifier_type":  map[string]any{"type": "string", "enum": []string{"mc", "mx", "ff", "dot", "name"}},
+					"identifier_value": map[string]any{"type": "string"},
+					"force_refresh":    map[string]any{"type": "boolean", "default": false},
+					"offline":          map[string]any{"type": "boolean", "default": false},
+					"max_age":          map[string]any{"type": "string", "default": "24h"},
+				},
+				"required": []string{"path", "identifier_type", "identifier_value"},
+			},
+		},
 	}
 }
 
@@ -182,6 +210,10 @@ func (s *Server) callTool(ctx context.Context, params json.RawMessage) (any, *rp
 		return s.callCarrierLookup(ctx, p.Arguments)
 	case "carrier_diff":
 		return s.callCarrierDiff(ctx, p.Arguments)
+	case "packet_extract":
+		return s.callPacketExtract(ctx, p.Arguments)
+	case "packet_check":
+		return s.callPacketCheck(ctx, p.Arguments)
 	default:
 		return nil, invalidParams("unknown tool")
 	}
@@ -255,6 +287,78 @@ func (s *Server) callCarrierDiff(ctx context.Context, raw json.RawMessage) (any,
 	out, err := jsonToolResult(result)
 	if err != nil {
 		return nil, internalError("could not encode carrier_diff result")
+	}
+	return out, nil
+}
+
+func (s *Server) callPacketExtract(ctx context.Context, raw json.RawMessage) (any, *rpcError) {
+	var args struct {
+		Path string `json:"path"`
+	}
+	if err := decodeArguments(raw, &args); err != nil {
+		return nil, invalidParams("invalid packet_extract arguments")
+	}
+	if strings.TrimSpace(args.Path) == "" {
+		return nil, invalidParams("packet_extract requires path")
+	}
+	result, err := packet.ExtractReport(ctx, args.Path)
+	if err != nil {
+		return toolErrorResult(err), nil
+	}
+	out, err := jsonToolResult(result)
+	if err != nil {
+		return nil, internalError("could not encode packet_extract result")
+	}
+	return out, nil
+}
+
+func (s *Server) callPacketCheck(ctx context.Context, raw json.RawMessage) (any, *rpcError) {
+	var args struct {
+		Path            string `json:"path"`
+		IdentifierType  string `json:"identifier_type"`
+		IdentifierValue string `json:"identifier_value"`
+		ForceRefresh    bool   `json:"force_refresh"`
+		Offline         *bool  `json:"offline"`
+		MaxAge          string `json:"max_age"`
+	}
+	if err := decodeArguments(raw, &args); err != nil {
+		return nil, invalidParams("invalid packet_check arguments")
+	}
+	if strings.TrimSpace(args.Path) == "" {
+		return nil, invalidParams("packet_check requires path")
+	}
+	if strings.TrimSpace(args.IdentifierType) == "" || strings.TrimSpace(args.IdentifierValue) == "" {
+		return nil, invalidParams("packet_check requires identifier_type and identifier_value")
+	}
+	var maxAge time.Duration
+	if strings.TrimSpace(args.MaxAge) != "" {
+		parsed, err := time.ParseDuration(args.MaxAge)
+		if err != nil {
+			return nil, invalidParams("invalid max_age duration")
+		}
+		maxAge = parsed
+	}
+	offline := s.defaultOffline
+	if args.Offline != nil {
+		offline = *args.Offline
+	}
+	lookup, err := s.service.Lookup(ctx, domain.LookupRequest{
+		IdentifierType:  args.IdentifierType,
+		IdentifierValue: args.IdentifierValue,
+		ForceRefresh:    args.ForceRefresh,
+		Offline:         offline,
+		MaxAge:          maxAge,
+	})
+	if err != nil {
+		return toolErrorResult(err), nil
+	}
+	result, err := packet.Check(ctx, args.Path, sanitizeLookupResult(lookup))
+	if err != nil {
+		return toolErrorResult(err), nil
+	}
+	out, err := jsonToolResult(result)
+	if err != nil {
+		return nil, internalError("could not encode packet_check result")
 	}
 	return out, nil
 }

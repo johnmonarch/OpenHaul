@@ -60,6 +60,15 @@ type CheckResult struct {
 	Disclaimer    string                `json:"disclaimer"`
 }
 
+type ExtractResult struct {
+	SchemaVersion string          `json:"schema_version"`
+	ReportType    string          `json:"report_type"`
+	GeneratedAt   string          `json:"generated_at"`
+	PacketPath    string          `json:"packet_path"`
+	Extracted     ExtractedFields `json:"extracted"`
+	Disclaimer    string          `json:"disclaimer"`
+}
+
 var (
 	legalNameRE = regexp.MustCompile(`(?im)^\s*(?:legal\s+name|carrier\s+legal\s+name|legal\s+business\s+name)\s*[:\-]\s*(.+?)\s*$`)
 	dbaRE       = regexp.MustCompile(`(?im)^\s*(?:dba|d/b/a|doing\s+business\s+as)\s*[:\-]\s*(.+?)\s*$`)
@@ -88,6 +97,21 @@ func Check(ctx context.Context, packetPath string, lookup domain.LookupResult) (
 		Comparisons:   comparisons,
 		Summary:       summarize(comparisons),
 		Warnings:      lookup.Warnings,
+		Disclaimer:    domain.Disclaimer,
+	}, nil
+}
+
+func ExtractReport(ctx context.Context, packetPath string) (ExtractResult, error) {
+	extracted, err := Extract(ctx, packetPath)
+	if err != nil {
+		return ExtractResult{}, err
+	}
+	return ExtractResult{
+		SchemaVersion: domain.SchemaVersion,
+		ReportType:    "packet_extract_report",
+		GeneratedAt:   time.Now().UTC().Format(time.RFC3339),
+		PacketPath:    packetPath,
+		Extracted:     extracted,
 		Disclaimer:    domain.Disclaimer,
 	}, nil
 }
@@ -193,6 +217,59 @@ func Write(w io.Writer, result CheckResult, format string) error {
 	default:
 		return fmt.Errorf("unsupported format %q", format)
 	}
+}
+
+func WriteExtract(w io.Writer, result ExtractResult, format string) error {
+	switch strings.ToLower(format) {
+	case "json":
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		return enc.Encode(result)
+	case "markdown", "md":
+		_, err := fmt.Fprint(w, ExtractMarkdown(result))
+		return err
+	case "table", "":
+		_, err := fmt.Fprint(w, ExtractTable(result))
+		return err
+	default:
+		return fmt.Errorf("unsupported format %q", format)
+	}
+}
+
+func ExtractMarkdown(result ExtractResult) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "# OpenHaul Guard Packet Extract\n\n")
+	fmt.Fprintf(&b, "Generated: %s\n", result.GeneratedAt)
+	fmt.Fprintf(&b, "Packet: %s\n\n", result.PacketPath)
+	fmt.Fprintf(&b, "## Extracted Fields\n\n")
+	fmt.Fprintf(&b, "| Field | Value |\n|---|---|\n")
+	fmt.Fprintf(&b, "| Legal name | %s |\n", escape(result.Extracted.LegalName))
+	fmt.Fprintf(&b, "| DBA name | %s |\n", escape(result.Extracted.DBAName))
+	fmt.Fprintf(&b, "| USDOT number | %s |\n", escape(result.Extracted.USDOTNumber))
+	fmt.Fprintf(&b, "| Address | %s |\n", escape(result.Extracted.RawAddress))
+	fmt.Fprintf(&b, "| Phone | %s |\n", escape(result.Extracted.Contact.Phone))
+	fmt.Fprintf(&b, "| Email | %s |\n", escape(result.Extracted.Contact.Email))
+	for _, id := range result.Extracted.Identifiers {
+		fmt.Fprintf(&b, "| Identifier %s | %s |\n", escape(id.Type), escape(id.Value))
+	}
+	fmt.Fprintf(&b, "\n## Disclaimer\n\n%s\n", domain.Disclaimer)
+	return b.String()
+}
+
+func ExtractTable(result ExtractResult) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "OpenHaul Guard packet extract\n\n")
+	fmt.Fprintf(&b, "Packet: %s\n", result.PacketPath)
+	fmt.Fprintf(&b, "Legal name: %s\n", blank(result.Extracted.LegalName))
+	fmt.Fprintf(&b, "DBA name: %s\n", blank(result.Extracted.DBAName))
+	fmt.Fprintf(&b, "USDOT: %s\n", blank(result.Extracted.USDOTNumber))
+	for _, id := range result.Extracted.Identifiers {
+		fmt.Fprintf(&b, "%s: %s\n", strings.ToUpper(id.Type), blank(id.Value))
+	}
+	fmt.Fprintf(&b, "Address: %s\n", blank(result.Extracted.RawAddress))
+	fmt.Fprintf(&b, "Phone: %s\n", blank(result.Extracted.Contact.Phone))
+	fmt.Fprintf(&b, "Email: %s\n", blank(result.Extracted.Contact.Email))
+	return b.String()
 }
 
 func Markdown(result CheckResult) string {

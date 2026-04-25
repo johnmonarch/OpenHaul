@@ -49,6 +49,9 @@ reports.default_format
 mcp.transport
 mcp.host
 privacy.telemetry
+sources.mirror.enabled
+sources.mirror.local_path
+sources.mirror.url
 fmcsa.web_key
 socrata.app_token
 ```
@@ -77,6 +80,7 @@ enabled = true
 enabled = true
 url = "https://downloads.openhaulguard.org/bootstrap/mc_dot_index.parquet"
 checksum_url = "https://downloads.openhaulguard.org/bootstrap/mc_dot_index.sha256"
+local_path = "~/.openhaulguard/mirror/carriers.json"
 
 [reports]
 default_format = "table"

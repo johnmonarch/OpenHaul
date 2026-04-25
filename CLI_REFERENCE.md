@@ -24,17 +24,23 @@ ohg
 
 ```text
 ohg setup
+ohg init
 ohg doctor
 ohg carrier lookup
 ohg carrier diff
 ohg watch add
+ohg watch remove
 ohg watch list
 ohg watch sync
+ohg watch report
+ohg mirror status
+ohg mirror import
 ohg config path
 ohg config list
 ohg config get
 ohg config set
 ohg mcp serve
+ohg packet extract
 ohg packet check
 ```
 
@@ -44,9 +50,10 @@ ohg packet check
 ohg setup [--quick] [--no-browser]
 ohg setup fmcsa [--no-browser]
 ohg setup socrata [--no-browser]
+ohg init
 ```
 
-`setup --quick` creates local config and SQLite storage without API credentials. `setup fmcsa` validates and stores a WebKey. `setup socrata` stores an app token for future data-source work.
+`setup` runs the guided local setup and saves progress in the local setup state, so rerunning it can resume safely. It creates local config and SQLite storage without requiring API credentials. `ohg init` is a quick alias for local setup. `setup fmcsa` validates and stores a WebKey. `setup socrata` stores an app token for future data-source work.
 
 ## doctor
 
@@ -115,11 +122,35 @@ Diff compares stored local observations. It needs at least two observations for 
 ```bash
 ohg watch add --mc <number> [--label <text>]
 ohg watch add --dot <number> [--label <text>]
+ohg watch remove --mc <number>
+ohg watch remove --dot <number>
 ohg watch list
 ohg watch sync [--force-refresh]
+ohg watch report [--since 24h] [--label <text>] [--format table|json|markdown]
 ```
 
 `watch sync` runs lookup for active watchlist entries and updates `last_synced_at` when successful.
+`watch report` summarizes active watchlist changes from local observations since the requested duration or date.
+
+## mirror
+
+```bash
+ohg mirror status
+ohg mirror import <path>
+```
+
+`mirror import` installs a local JSON bootstrap mirror at the configured mirror path. When no FMCSA WebKey is configured and the carrier is not already cached, `carrier lookup` can use this local mirror and marks the lookup mode as `mirror`.
+
+The initial mirror schema is:
+
+```json
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-04-25T00:00:00Z",
+  "source_timestamp": "2026-04-24",
+  "carriers": []
+}
+```
 
 ## config
 
@@ -139,6 +170,9 @@ reports.default_format
 mcp.transport
 mcp.host
 privacy.telemetry
+sources.mirror.enabled
+sources.mirror.local_path
+sources.mirror.url
 ```
 
 Credential keys accepted by `config set`:
@@ -170,11 +204,14 @@ Supported tools:
 ```text
 carrier_lookup
 carrier_diff
+packet_extract
+packet_check
 ```
 
 ## packet
 
 ```bash
+ohg packet extract <path>
 ohg packet check <path> --mc <number>
 ohg packet check <path> --dot <number>
 ```
@@ -186,7 +223,9 @@ Flags:
 --mc string    Motor Carrier docket number
 ```
 
-Packet check accepts text files, extensionless text files, and text-based PDFs when `pdftotext` is installed. It extracts packet fields, runs a carrier lookup, and writes a table, JSON, or Markdown comparison report.
+Packet extract accepts text files, extensionless text files, and text-based PDFs when `pdftotext` is installed. It writes extracted carrier fields as table, JSON, or Markdown.
+
+Packet check uses the same extraction path, runs a carrier lookup, and writes a table, JSON, or Markdown comparison report.
 
 ## Exit Codes
 

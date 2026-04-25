@@ -58,6 +58,39 @@ Input:
 
 Output uses the same structured content as `ohg carrier diff --format json`.
 
+### packet_extract
+
+Extracts structured carrier fields from a text or text-based PDF packet.
+
+Input:
+
+```json
+{
+  "path": "examples/fixtures/packets/basic_carrier_packet.txt"
+}
+```
+
+Output uses the same structured content as `ohg packet extract --format json`.
+
+### packet_check
+
+Checks a carrier packet against a carrier lookup.
+
+Input:
+
+```json
+{
+  "path": "examples/fixtures/packets/basic_carrier_packet.txt",
+  "identifier_type": "mc",
+  "identifier_value": "123456",
+  "force_refresh": false,
+  "offline": false,
+  "max_age": "24h"
+}
+```
+
+Output uses the same structured content as `ohg packet check --format json`.
+
 ## Safety
 
 Tool descriptions include this instruction:

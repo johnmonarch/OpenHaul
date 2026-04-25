@@ -1,0 +1,47 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-04-25T00:00:00Z",
+  "source_timestamp": "2026-04-24",
+  "attribution": "Example OpenHaul Guard mirror fixture. Not official FMCSA data.",
+  "carriers": [
+    {
+      "usdot_number": "1234567",
+      "legal_name": "Example Trucking LLC",
+      "dba_name": "Example Trucking",
+      "identifiers": [
+        {
+          "type": "MC",
+          "value": "123456",
+          "status": "active"
+        }
+      ],
+      "physical_address": {
+        "line1": "100 Main Street",
+        "city": "Dallas",
+        "state": "TX",
+        "postal_code": "75201",
+        "country": "US"
+      },
+      "contact": {
+        "phone": "+1 555-010-2222",
+        "email": "dispatch@exampletrucking.test"
+      },
+      "operations": {
+        "power_units": 12,
+        "drivers": 14
+      },
+      "authority": [
+        {
+          "docket_type": "MC",
+          "docket_number": "123456",
+          "authority_type": "common",
+          "authority_status": "ACTIVE",
+          "original_action_date": "2022-01-15",
+          "source": "openhaul_mirror",
+          "observed_at": "2026-04-24T00:00:00Z"
+        }
+      ],
+      "source_first_seen_at": "2026-04-24T00:00:00Z"
+    }
+  ]
+}

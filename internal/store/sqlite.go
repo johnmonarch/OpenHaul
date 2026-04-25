@@ -103,6 +103,21 @@ func (s *Store) SetSetupState(ctx context.Context, key string, value any) error 
 	return err
 }
 
+func (s *Store) GetSetupState(ctx context.Context, key string, target any) (bool, error) {
+	var body string
+	err := s.db.QueryRowContext(ctx, `SELECT value_json FROM setup_state WHERE key = ?`, key).Scan(&body)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if err := json.Unmarshal([]byte(body), target); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func (s *Store) ResolveIdentifier(ctx context.Context, typ, normalizedValue string) (string, error) {
 	if typ == "dot" {
 		return normalizedValue, nil
