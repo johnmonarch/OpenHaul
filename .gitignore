@@ -10,3 +10,6 @@ coverage.out
 coverage/
 *.prof
 .openhaulguard/
+*.deb
+*.rpm
+*.apk

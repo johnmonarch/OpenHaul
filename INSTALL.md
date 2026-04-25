@@ -1,17 +1,76 @@
 # Install
 
+## Recommended Install
+
+### One-Line Installer
+
+After the first GitHub release is published, install the latest binary with:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/johnmonarch/OpenCarrier/main/install.sh | sh
+```
+
+The installer:
+
+- Detects macOS/Linux and `amd64`/`arm64`
+- Downloads the matching GitHub Release archive
+- Verifies `checksums.txt`
+- Installs `ohg` into `/usr/local/bin` by default
+- Prints the next setup command
+
+For a user-local install:
+
+```bash
+mkdir -p "$HOME/.local/bin"
+curl -fsSL https://raw.githubusercontent.com/johnmonarch/OpenCarrier/main/install.sh \
+  | OHG_INSTALL_DIR="$HOME/.local/bin" sh
+```
+
+Install a specific release:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/johnmonarch/OpenCarrier/main/install.sh \
+  | OHG_VERSION=v0.1.0 sh
+```
+
+### Homebrew
+
+After the Homebrew tap is published:
+
+```bash
+brew tap johnmonarch/openhaulguard
+brew install ohg
+```
+
+The release workflow can update that tap when `HOMEBREW_TAP_GITHUB_TOKEN` is configured in GitHub Actions.
+
+### Linux Packages
+
+Tagged releases also produce Linux packages through GoReleaser:
+
+- `.deb` for Debian/Ubuntu
+- `.rpm` for Fedora/RHEL-compatible systems
+- `.apk` for Alpine
+
+Example:
+
+```bash
+sudo dpkg -i ohg_*_linux_amd64.deb
+```
+
 ## Requirements
 
-- Go 1.23 or newer
 - A shell environment that can run the `ohg` binary
 - Optional: an FMCSA WebKey for live carrier lookups
 - Optional: `pdftotext` from poppler for PDF packet checks
 
 ## Build From Source
 
+Source builds require Go 1.23 or newer.
+
 ```bash
-git clone https://github.com/openhaulguard/openhaulguard.git
-cd openhaulguard
+git clone https://github.com/johnmonarch/OpenCarrier.git
+cd OpenCarrier
 go build -o ohg ./cmd/ohg
 ```
 
@@ -58,3 +117,5 @@ Tagged releases are packaged by GoReleaser for:
 - `windows/arm64`
 
 Non-Windows archives are `tar.gz`; Windows archives are `zip`. Each release includes `checksums.txt`.
+
+Current module path note: `go.mod` uses `github.com/openhaulguard/openhaulguard` as the intended long-term module path, while this repository currently lives at `github.com/johnmonarch/OpenCarrier`. Use release binaries, Homebrew, packages, or local source builds until the canonical repo path is finalized.

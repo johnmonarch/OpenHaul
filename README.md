@@ -19,20 +19,41 @@ This repository contains the first Go CLI implementation:
 
 ## Quick Start
 
-Build from source:
+Install from the latest release:
 
 ```bash
-go build -o ohg ./cmd/ohg
+curl -fsSL https://raw.githubusercontent.com/johnmonarch/OpenCarrier/main/install.sh | sh
+```
+
+Or install with Homebrew after the tap is published:
+
+```bash
+brew tap johnmonarch/openhaulguard
+brew install ohg
 ```
 
 Initialize local config and storage:
 
 ```bash
-./ohg setup --quick --yes
-./ohg doctor
+ohg setup --quick --yes
+ohg doctor
+```
+
+Build from source for development:
+
+```bash
+go build -o ohg ./cmd/ohg
 ```
 
 Run a fixture-backed lookup without live credentials:
+
+```bash
+ohg carrier lookup --mc 123456 \
+  --fixture examples/fixtures/fmcsa_qcmobile/fmcsa_qcmobile_carrier_valid.json \
+  --format markdown
+```
+
+If you built locally and did not install the binary, use `./ohg`:
 
 ```bash
 ./ohg carrier lookup --mc 123456 \

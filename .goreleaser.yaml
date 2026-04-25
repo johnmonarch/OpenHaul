@@ -47,6 +47,40 @@ archives:
 checksums:
   - name_template: checksums.txt
 
+nfpms:
+  - id: ohg
+    package_name: ohg
+    vendor: OpenHaul Guard contributors
+    homepage: https://github.com/johnmonarch/OpenCarrier
+    maintainer: OpenHaul Guard contributors
+    description: Local-first carrier verification and freight risk review CLI.
+    license: Apache-2.0
+    formats:
+      - deb
+      - rpm
+      - apk
+    bindir: /usr/bin
+    contents:
+      - src: ./README.md
+        dst: /usr/share/doc/ohg/README.md
+      - src: ./LICENSE
+        dst: /usr/share/doc/ohg/LICENSE
+
+brews:
+  - name: ohg
+    repository:
+      owner: johnmonarch
+      name: homebrew-openhaulguard
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: https://github.com/johnmonarch/OpenCarrier
+    description: Local-first carrier verification and freight risk review CLI.
+    license: Apache-2.0
+    install: |
+      bin.install "ohg"
+    test: |
+      system "#{bin}/ohg", "--version"
+
 snapshot:
   version_template: "{{ incpatch .Version }}-next"
 
