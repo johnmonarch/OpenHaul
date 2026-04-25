@@ -107,12 +107,23 @@ if [ "$VERSION" = "latest" ]; then
   fi
 fi
 
-ASSET="ohg_${VERSION}_${OS}_${ARCH}.${EXT}"
-BASE_URL="https://github.com/$OWNER/$REPO/releases/download/$VERSION"
+case "$VERSION" in
+  v*)
+    RELEASE_TAG="$VERSION"
+    ASSET_VERSION="${VERSION#v}"
+    ;;
+  *)
+    RELEASE_TAG="v$VERSION"
+    ASSET_VERSION="$VERSION"
+    ;;
+esac
+
+ASSET="ohg_${ASSET_VERSION}_${OS}_${ARCH}.${EXT}"
+BASE_URL="https://github.com/$OWNER/$REPO/releases/download/$RELEASE_TAG"
 ARCHIVE="$TMP_DIR/$ASSET"
 CHECKSUMS="$TMP_DIR/checksums.txt"
 
-echo "Installing OpenHaul Guard $VERSION for $OS/$ARCH"
+echo "Installing OpenHaul Guard $RELEASE_TAG for $OS/$ARCH"
 download "$BASE_URL/$ASSET" "$ARCHIVE"
 download "$BASE_URL/checksums.txt" "$CHECKSUMS"
 
