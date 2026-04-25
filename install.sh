@@ -2,7 +2,7 @@
 set -eu
 
 OWNER="${OHG_GITHUB_OWNER:-johnmonarch}"
-REPO="${OHG_GITHUB_REPO:-OpenCarrier}"
+REPO="${OHG_GITHUB_REPO:-OpenHaul}"
 BIN_NAME="${OHG_BIN_NAME:-ohg}"
 DEFAULT_INSTALL_DIR="/usr/local/bin"
 INSTALL_DIR="${OHG_INSTALL_DIR:-$DEFAULT_INSTALL_DIR}"

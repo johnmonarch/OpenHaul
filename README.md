@@ -23,7 +23,7 @@ This repository contains the first Go CLI implementation:
 Install from the latest release:
 
 ```bash
-curl -fsSL https://github.com/johnmonarch/OpenCarrier/releases/latest/download/install.sh | sh
+curl -fsSL https://github.com/johnmonarch/OpenHaul/releases/latest/download/install.sh | sh
 ```
 
 Or install with Homebrew:

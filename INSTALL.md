@@ -7,7 +7,7 @@
 Install the latest binary with:
 
 ```bash
-curl -fsSL https://github.com/johnmonarch/OpenCarrier/releases/latest/download/install.sh | sh
+curl -fsSL https://github.com/johnmonarch/OpenHaul/releases/latest/download/install.sh | sh
 ```
 
 The installer:
@@ -24,14 +24,14 @@ For a user-local install that never needs `sudo`:
 
 ```bash
 mkdir -p "$HOME/.local/bin"
-curl -fsSL https://github.com/johnmonarch/OpenCarrier/releases/latest/download/install.sh \
+curl -fsSL https://github.com/johnmonarch/OpenHaul/releases/latest/download/install.sh \
   | OHG_INSTALL_DIR="$HOME/.local/bin" sh
 ```
 
 Install the `v0.1.0` release explicitly:
 
 ```bash
-curl -fsSL https://github.com/johnmonarch/OpenCarrier/releases/download/v0.1.0/install.sh \
+curl -fsSL https://github.com/johnmonarch/OpenHaul/releases/download/v0.1.0/install.sh \
   | OHG_VERSION=v0.1.0 sh
 ```
 
@@ -83,8 +83,8 @@ sudo apk add --allow-untrusted ohg_0.1.0_linux_amd64.apk
 Source builds require Go 1.23 or newer.
 
 ```bash
-git clone https://github.com/johnmonarch/OpenCarrier.git
-cd OpenCarrier
+git clone https://github.com/johnmonarch/OpenHaul.git
+cd OpenHaul
 go build -o ohg ./cmd/ohg
 ```
 
@@ -138,14 +138,14 @@ Tagged releases are packaged by GoReleaser for:
 
 Non-Windows archives are `tar.gz`; Windows archives are `zip`. Each release includes `checksums.txt`.
 
-Current module path note: `go.mod` uses `github.com/openhaulguard/openhaulguard` as the intended long-term module path, while this repository currently lives at `github.com/johnmonarch/OpenCarrier`. Use release binaries, Homebrew, packages, or local source builds until the canonical repo path is finalized.
+Current module path note: `go.mod` uses `github.com/openhaulguard/openhaulguard` as the intended long-term module path, while this repository currently lives at `github.com/johnmonarch/OpenHaul`. Use release binaries, Homebrew, packages, or local source builds until the canonical repo path is finalized.
 
 ## Maintainer Release Checklist
 
 Use this checklist for the `v0.1.0` release path.
 
 1. Confirm the Homebrew tap repository exists at `johnmonarch/homebrew-openhaulguard` with a `main` branch and a `Formula/` directory.
-2. Create a repository secret named `HOMEBREW_TAP_GITHUB_TOKEN` in `johnmonarch/OpenCarrier`. Use a fine-grained token or GitHub App token that can write contents to `johnmonarch/homebrew-openhaulguard`; the default `GITHUB_TOKEN` cannot push to a different repository.
+2. Create a repository secret named `HOMEBREW_TAP_GITHUB_TOKEN` in `johnmonarch/OpenHaul`. Use a fine-grained token or GitHub App token that can write contents to `johnmonarch/homebrew-openhaulguard`; the default `GITHUB_TOKEN` cannot push to a different repository.
 3. Run local release checks before tagging:
 
 ```bash
@@ -169,7 +169,7 @@ git push origin v0.1.0
 
 ```bash
 tmp="$(mktemp -d)"
-curl -fsSL https://github.com/johnmonarch/OpenCarrier/releases/download/v0.1.0/install.sh \
+curl -fsSL https://github.com/johnmonarch/OpenHaul/releases/download/v0.1.0/install.sh \
   | OHG_VERSION=v0.1.0 OHG_INSTALL_DIR="$tmp/bin" sh
 "$tmp/bin/ohg" --version
 "$tmp/bin/ohg" setup --help

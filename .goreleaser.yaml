@@ -55,7 +55,7 @@ nfpms:
   - id: ohg
     package_name: ohg
     vendor: OpenHaul Guard contributors
-    homepage: https://github.com/johnmonarch/OpenCarrier
+    homepage: https://github.com/johnmonarch/OpenHaul
     maintainer: OpenHaul Guard contributors
     description: Local-first carrier verification and freight risk review CLI.
     license: Apache-2.0
@@ -77,7 +77,7 @@ brews:
       name: homebrew-openhaulguard
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     directory: Formula
-    homepage: https://github.com/johnmonarch/OpenCarrier
+    homepage: https://github.com/johnmonarch/OpenHaul
     description: Local-first carrier verification and freight risk review CLI.
     license: Apache-2.0
     install: |
