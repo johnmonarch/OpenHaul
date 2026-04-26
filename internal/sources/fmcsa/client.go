@@ -108,22 +108,22 @@ func (c *Client) get(ctx context.Context, endpoint string) (RawResponse, error) 
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
 		fetch.ErrorCode = "OHG_AUTH_FMCSA_INVALID"
 		fetch.ErrorMessage = fmt.Sprintf("FMCSA returned HTTP %d", resp.StatusCode)
-		return RawResponse{Endpoint: endpoint, Body: body, Fetch: fetch}, fmt.Errorf(fetch.ErrorMessage)
+		return RawResponse{Endpoint: endpoint, Body: body, Fetch: fetch}, fmt.Errorf("%s", fetch.ErrorMessage)
 	}
 	if resp.StatusCode == http.StatusNotFound {
 		fetch.ErrorCode = "OHG_SOURCE_NOT_FOUND"
 		fetch.ErrorMessage = "carrier not found"
-		return RawResponse{Endpoint: endpoint, Body: body, Fetch: fetch}, fmt.Errorf(fetch.ErrorMessage)
+		return RawResponse{Endpoint: endpoint, Body: body, Fetch: fetch}, fmt.Errorf("%s", fetch.ErrorMessage)
 	}
 	if resp.StatusCode == http.StatusTooManyRequests {
 		fetch.ErrorCode = "OHG_SOURCE_RATE_LIMITED"
 		fetch.ErrorMessage = "FMCSA rate limited the request"
-		return RawResponse{Endpoint: endpoint, Body: body, Fetch: fetch}, fmt.Errorf(fetch.ErrorMessage)
+		return RawResponse{Endpoint: endpoint, Body: body, Fetch: fetch}, fmt.Errorf("%s", fetch.ErrorMessage)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		fetch.ErrorCode = "OHG_SOURCE_UNAVAILABLE"
 		fetch.ErrorMessage = fmt.Sprintf("FMCSA returned HTTP %d", resp.StatusCode)
-		return RawResponse{Endpoint: endpoint, Body: body, Fetch: fetch}, fmt.Errorf(fetch.ErrorMessage)
+		return RawResponse{Endpoint: endpoint, Body: body, Fetch: fetch}, fmt.Errorf("%s", fetch.ErrorMessage)
 	}
 	return RawResponse{Endpoint: endpoint, Body: body, Fetch: fetch}, nil
 }
