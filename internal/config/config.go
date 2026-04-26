@@ -41,8 +41,8 @@ type SourceEnabledConfig struct {
 
 type MirrorConfig struct {
 	Enabled     bool   `toml:"enabled"`
-	URL         string `toml:"url"`
-	ChecksumURL string `toml:"checksum_url"`
+	URL         string `toml:"url,omitempty"`
+	ChecksumURL string `toml:"checksum_url,omitempty"`
 	LocalPath   string `toml:"local_path"`
 }
 
@@ -105,10 +105,8 @@ func Default(overrides Overrides) (Config, error) {
 			FMCSA:   SourceEnabledConfig{Enabled: true},
 			Socrata: SourceEnabledConfig{Enabled: true},
 			Mirror: MirrorConfig{
-				Enabled:     true,
-				URL:         "https://downloads.openhaulguard.org/bootstrap/mc_dot_index.parquet",
-				ChecksumURL: "https://downloads.openhaulguard.org/bootstrap/mc_dot_index.sha256",
-				LocalPath:   filepath.Join(home, "mirror", "carriers.json"),
+				Enabled:   true,
+				LocalPath: filepath.Join(home, "mirror", "carriers.json"),
 			},
 		},
 		Reports: ReportConfig{DefaultFormat: "table"},

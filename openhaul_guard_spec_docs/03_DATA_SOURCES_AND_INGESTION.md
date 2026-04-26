@@ -170,9 +170,10 @@ Config:
 ```toml
 [sources.mirror]
 enabled = true
-url = "https://downloads.openhaulguard.org/bootstrap/mc_dot_index.parquet"
-checksum_url = "https://downloads.openhaulguard.org/bootstrap/mc_dot_index.sha256"
+local_path = "~/.openhaulguard/mirror/carriers.json"
 ```
+
+No hosted OpenHaul mirror or project download domain exists today. Any future hosted mirror URL must be added only after the domain, hosting, checksums, redistribution review, and attribution policy exist.
 
 Formats:
 

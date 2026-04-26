@@ -33,7 +33,7 @@ brew install openhaulguard/tap/ohg
 ### One-line installer
 
 ```bash
-curl -fsSL https://install.openhaulguard.org | sh
+curl -fsSL https://github.com/johnmonarch/OpenHaul/releases/latest/download/install.sh | sh
 ```
 
 Installer requirements:

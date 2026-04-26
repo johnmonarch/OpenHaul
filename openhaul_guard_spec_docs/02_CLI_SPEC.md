@@ -81,7 +81,7 @@ Step 3 of 5: Socrata/DataHub app token
   Or type 'skip'.
 
 Step 4 of 5: bootstrap index
-  Download a small MC/DOT lookup index? [Y/n]
+  Import or build a local MC/DOT lookup index? [y/N]
 
 Step 5 of 5: validation
   Run ohg doctor now? [Y/n]

@@ -89,7 +89,7 @@ ohg mirror build examples/fixtures/socrata/company_census_rows.json
 ohg mirror import ./carriers.json
 ```
 
-`mirror build` converts DOT/DataHub Company Census JSON rows into the OpenHaul Guard mirror format with stable carrier ordering and attribution metadata. If no FMCSA WebKey is configured and no fresh local cache exists, carrier lookup can fall back to the imported or built mirror. Mirror reports use `freshness.mode = "mirror"` and include a warning that the result is not a live FMCSA lookup. A hosted public mirror still requires redistribution and attribution review before launch.
+`mirror build` converts DOT/DataHub Company Census JSON rows into the OpenHaul Guard mirror format with stable carrier ordering and attribution metadata. If no FMCSA WebKey is configured and no fresh local cache exists, carrier lookup can fall back to the imported or built mirror. Mirror reports use `freshness.mode = "mirror"` and include a warning that the result is not a live FMCSA lookup. OpenHaul Guard does not currently operate a hosted public mirror or project download domain; a hosted mirror still requires redistribution, attribution, hosting, and operational review before launch.
 
 ## Freshness and Interpretation
 
