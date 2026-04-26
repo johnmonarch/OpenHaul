@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://openhaulguard.org/schemas/risk-assessment.schema.json",
+  "$id": "https://raw.githubusercontent.com/johnmonarch/OpenHaul/main/schemas/risk-assessment.schema.json",
   "title": "OpenHaul Guard Risk Assessment",
   "type": "object",
   "required": ["score", "recommendation", "flags"],

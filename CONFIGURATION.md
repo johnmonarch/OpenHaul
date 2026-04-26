@@ -78,8 +78,6 @@ enabled = true
 
 [sources.mirror]
 enabled = true
-url = "https://downloads.openhaulguard.org/bootstrap/mc_dot_index.parquet"
-checksum_url = "https://downloads.openhaulguard.org/bootstrap/mc_dot_index.sha256"
 local_path = "~/.openhaulguard/mirror/carriers.json"
 
 [reports]
@@ -93,5 +91,7 @@ port = 8798
 [privacy]
 telemetry = false
 ```
+
+OpenHaul Guard does not currently operate a hosted bootstrap mirror or project domain. Build or import a local mirror with `ohg mirror build` or `ohg mirror import`. Leave `sources.mirror.url` and `sources.mirror.checksum_url` unset unless you run your own mirror.
 
 The current CLI does not send telemetry.

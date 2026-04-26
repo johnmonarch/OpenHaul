@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://openhaulguard.org/schemas/lookup-result.schema.json",
+  "$id": "https://raw.githubusercontent.com/johnmonarch/OpenHaul/main/schemas/lookup-result.schema.json",
   "title": "OpenHaul Guard Lookup Result",
   "type": "object",
   "required": ["schema_version", "report_type", "generated_at", "lookup", "carrier", "freshness", "risk_assessment", "sources", "disclaimer"],

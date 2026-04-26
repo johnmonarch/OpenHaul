@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://openhaulguard.org/schemas/carrier-profile.schema.json",
+  "$id": "https://raw.githubusercontent.com/johnmonarch/OpenHaul/main/schemas/carrier-profile.schema.json",
   "title": "OpenHaul Guard Carrier Profile",
   "type": "object",
   "required": ["usdot_number"],
